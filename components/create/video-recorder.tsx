@@ -1,11 +1,23 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { createClient } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Mic, Camera, Monitor, Play, Square, Settings, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase URL or Anon Key missing for video recorder component.');
+}
+
+const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
+const BUCKET_NAME = 'source-videos';
 
 interface VideoRecorderProps {
   onRecordingComplete?: (blob: Blob) => void;
@@ -113,13 +125,120 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
   
   // Initialize source video
   useEffect(() => {
-    // For MVP, we'll use a placeholder video
-    // In a real implementation, you would fetch the source video from Supabase storage
-    if (sourceVideoRef.current) {
-      // Set a placeholder video for now
-      sourceVideoRef.current.src = 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+    // Only proceed if we have a sourceVideoId
+    if (!sourceVideoId || !sourceVideoRef.current) {
+      return;
     }
-  }, [sourceVideoId])
+
+    const fetchSourceVideo = async () => {
+      // Store reference locally to avoid null checks on every access
+      const videoElement = sourceVideoRef.current;
+      if (!videoElement) return;
+      
+      try {
+        console.log('Fetching source video with ID:', sourceVideoId);
+        
+        // First try to get the video directly from API endpoint which is more reliable
+        // as it includes authentication and user_id filtering
+        try {
+          const response = await fetch(`/api/videos/download?id=${sourceVideoId}`);
+          
+          if (response.ok) {
+            const videoData = await response.json();
+            console.log('Video data from API:', videoData);
+            
+            if (videoData.status === 'completed' && videoData.storage_path) {
+              // Get the public URL from Supabase
+              const { data: publicUrlData } = await supabase.storage
+                .from('source-videos') // Use the correct bucket name
+                .getPublicUrl(videoData.storage_path);
+                
+              if (publicUrlData?.publicUrl) {
+                console.log('Setting source video from API response:', publicUrlData.publicUrl);
+                videoElement.src = publicUrlData.publicUrl;
+                return;
+              }
+            }
+          }
+        } catch (apiError) {
+          console.error('Error fetching from API, falling back to direct Supabase query:', apiError);
+        }
+        
+        // Fallback to direct Supabase query
+        console.log('Falling back to direct Supabase query');
+        
+        // Get the user ID from the session to filter by both ID and user_id
+        // This ensures we only get videos that belong to the current user
+        const { data: sessionData } = await supabase.auth.getSession();
+        const userId = sessionData?.session?.user?.id;
+        
+        if (!userId) {
+          setError('Authentication required to load source video');
+          return;
+        }
+        
+        // Try to fetch with both ID and user_id to ensure we get exactly one result
+        let { data: sourceVideos, error: fetchError } = await supabase
+          .from('source_videos')
+          .select('*')
+          .eq('id', sourceVideoId)
+          .eq('user_id', userId);
+
+        // Log results for debugging
+        console.log('Supabase query results:', { sourceVideos, fetchError });
+        
+        if (fetchError) {
+          console.error('Error fetching source video:', fetchError);
+          setError(`Error loading source video: ${fetchError.message}`);
+          return;
+        }
+
+        if (!sourceVideos || sourceVideos.length === 0) {
+          setError('Source video not found');
+          return;
+        }
+        
+        // Use the first result if multiple were returned
+        const sourceVideo = sourceVideos[0];
+
+        // Check if we have a public_url directly from the database
+        if (sourceVideo.public_url) {
+          videoElement.src = sourceVideo.public_url;
+          return;
+        }
+
+        // If no public_url but we have a storage_path, get the public URL
+        if (sourceVideo.storage_path) {
+          const { data: publicUrlData } = await supabase.storage
+            .from(BUCKET_NAME)
+            .getPublicUrl(sourceVideo.storage_path);
+
+          if (publicUrlData?.publicUrl) {
+            videoElement.src = publicUrlData.publicUrl;
+          } else {
+            // Fall back to placeholder if all else fails
+            console.warn('No public URL available, using placeholder');
+            videoElement.src = 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+            setError('Could not load the actual source video. Using a placeholder instead.');
+          }
+        } else {
+          console.warn('No storage path available, using placeholder');
+          videoElement.src = 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+          setError('Could not load the actual source video. Using a placeholder instead.');
+        }
+      } catch (err) {
+        console.error('Error fetching source video:', err);
+        setError('An error occurred while loading the source video');
+        
+        // Fall back to placeholder in case of any error
+        if (videoElement) {
+          videoElement.src = 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        }
+      }
+    };
+
+    fetchSourceVideo();
+  }, [sourceVideoId]);
   
   // Handle recording start/stop
   const toggleRecording = () => {

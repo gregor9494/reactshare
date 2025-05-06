@@ -85,14 +85,8 @@ export default function CreatePage() {
       setSourceVideoId(downloadResult.id);
       setSourceVideoUrl(values.sourceUrl);
       
-      // For MVP, we'll simulate a successful download and move to the next step
-      // In a real implementation, you would poll the API for download status
-      setTimeout(() => {
-        setIsLoading(false);
-        setMessage({ type: 'success', text: 'Source video downloaded successfully!' });
-        // Move to the recording step
-        setCurrentStep('record');
-      }, 2000);
+      // Start polling for download status
+      await pollDownloadStatus(downloadResult.id);
 
     } catch (err) {
       console.error("Source video download error:", err);
@@ -220,6 +214,104 @@ export default function CreatePage() {
     }
   };
 
+  // Poll for download status
+  const pollDownloadStatus = async (downloadId: string) => {
+    const maxAttempts = 30; // Maximum polling attempts (5 minutes with 10s interval)
+    const pollInterval = 10000; // Poll every 10 seconds
+    let attempts = 0;
+    
+    const checkStatus = async () => {
+      try {
+        const statusResponse = await fetch(`/api/videos/download?id=${downloadId}`);
+        
+        if (!statusResponse.ok) {
+          throw new Error('Failed to get download status');
+        }
+        
+        const statusResult = await statusResponse.json();
+        
+        console.log('Download status result:', statusResult);
+
+        // Check for error message first
+        if (statusResult.error) {
+          setIsLoading(false);
+          setMessage({
+            type: 'error',
+            text: `Download error: ${statusResult.error}`
+          });
+          return true; // Stop polling
+        }
+
+        // Handle different statuses
+        switch(statusResult.status) {
+          case 'completed':
+            setIsLoading(false);
+            setMessage({ type: 'success', text: 'Source video downloaded successfully!' });
+            setCurrentStep('record');
+            return true; // Stop polling
+            
+          case 'error':
+            setIsLoading(false);
+            setMessage({
+              type: 'error',
+              text: statusResult.error || 'An error occurred during download.'
+            });
+            return true; // Stop polling
+            
+          case 'processing':
+          case 'downloading':
+          case 'uploading':
+            // Continue polling - not done yet
+            setMessage({
+              type: 'success',
+              text: `Source video ${statusResult.status}... This may take a few minutes.`
+            });
+            return false;
+            
+          default:
+            return false;
+        }
+      } catch (error) {
+        console.error('Error polling for download status:', error);
+        return false;
+      }
+    };
+    
+    // Initial check
+    if (await checkStatus()) {
+      return;
+    }
+    
+    // Setup the polling interval
+    const pollTimer = setInterval(async () => {
+      attempts++;
+      
+      // Check if we should stop polling
+      if (attempts >= maxAttempts || await checkStatus()) {
+        clearInterval(pollTimer);
+        
+        // If we hit the maximum attempts, show an error
+        if (attempts >= maxAttempts) {
+          setIsLoading(false);
+          setMessage({
+            type: 'error',
+            text: 'Download is taking longer than expected. Please check back later.'
+          });
+        }
+      }
+    }, pollInterval);
+    
+    // Return a promise that resolves when polling completes
+    return new Promise((resolve) => {
+      const checkComplete = setInterval(() => {
+        if (!setIsLoading) { // If loading is no longer true, we're done
+          clearInterval(checkComplete);
+          resolve(true);
+        }
+      }, 1000);
+    });
+  };
+  
   return (
     <div className="flex min-h-screen flex-col">
       <div className="container flex-1 items-start md:grid md:grid-cols-[220px_1fr] md:gap-6 lg:grid-cols-[240px_1fr] lg:gap-10">
