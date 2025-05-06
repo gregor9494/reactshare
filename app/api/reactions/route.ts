@@ -77,13 +77,14 @@ export async function POST(request: Request) {
 
 // --- GET Handler: Fetch user's reactions ---
 export async function GET(request: Request) {
-  const session = await auth(); // Get session using next-auth
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const userId = session.user.id;
-
   try {
+    const session = await auth(); // Get session using next-auth
+    if (!session?.user?.id) {
+      console.error('GET /api/reactions: Unauthorized - No session or user ID.');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const userId = session.user.id;
+
     // Fetch reactions for the logged-in user from Supabase
     const { data, error } = await supabaseAdmin
       .from('reactions')
@@ -92,15 +93,16 @@ export async function GET(request: Request) {
       .order('created_at', { ascending: false }); // Order by creation date
 
     if (error) {
-      console.error('Supabase Fetch Reactions Error:', error.message);
+      console.error('GET /api/reactions: Supabase Fetch Reactions Error:', error.message);
       return NextResponse.json({ error: 'Failed to fetch reactions.' }, { status: 500 });
     }
 
-    console.log(`Fetched ${data?.length || 0} reactions for user ${userId}`);
+    console.log(`GET /api/reactions: Fetched ${data?.length || 0} reactions for user ${userId}`);
     return NextResponse.json(data || [], { status: 200 });
 
   } catch (e) {
-    console.error('Unexpected error fetching reactions:', e);
+    console.error('GET /api/reactions: Unexpected error:', e);
+    // Return a generic 500 error response
     return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
   }
 }

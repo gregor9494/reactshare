@@ -57,16 +57,16 @@ export const authConfig = {
       if (isOnDashboard || isOnApiReactions) {
         return isLoggedIn; // Redirect unauthenticated users to login page for these routes
       } else if (isLoggedIn) {
-        // Optionally redirect logged-in users from auth pages like /login or /signup
-        if (nextUrl.pathname.startsWith('/login') || nextUrl.pathname.startsWith('/signup')) {
-          // Use Response.redirect instead of returning false/true for redirection
-          // Need to construct the URL properly
-          // return Response.redirect(new URL('/dashboard', nextUrl));
-        }
-      }
-      // Allow access by default for non-protected routes
-      return true;
-    },
+       // Redirect logged-in users from public/auth pages to the dashboard
+       const isOnPublicPage = nextUrl.pathname === '/' || nextUrl.pathname.startsWith('/login') || nextUrl.pathname.startsWith('/signup');
+       if (isOnPublicPage) {
+         // Use Response.redirect for server-side redirects in middleware
+         return Response.redirect(new URL('/dashboard', nextUrl));
+       }
+     }
+     // Allow access by default for other routes
+     return true;
+   },
   },
   // Using JWT strategy for session management
   session: { strategy: 'jwt' },

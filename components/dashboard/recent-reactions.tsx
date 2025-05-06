@@ -1,6 +1,7 @@
-import Image from "next/image"
-import { MoreHorizontal } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import Image from "next/image";
+import Link from "next/link"; // Import Link if needed for reaction details page
+import { MoreHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,30 +9,42 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
+import { Reaction } from '@/lib/types'; // Import Reaction type
 
-export function RecentReactions() {
+// Define props interface
+interface RecentReactionsProps {
+  reactions: Reaction[]; // Accept an array of Reaction objects
+}
+
+export function RecentReactions({ reactions }: RecentReactionsProps) {
+  // Display a message if there are no reactions
+  if (!reactions || reactions.length === 0) {
+    return (
+      <div className="text-center text-muted-foreground py-8">
+        No reactions created yet. Start by creating one!
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="flex items-center gap-4">
-          <div className="relative h-16 w-28 overflow-hidden rounded-md">
-            <Image
-              src={`/placeholder.svg?key=zfvqh&height=64&width=112&query=reaction%20video%20${i}`}
-              alt={`Reaction video ${i}`}
-              width={112}
-              height={64}
-              className="object-cover"
-            />
+      {reactions.map((reaction) => (
+        <div key={reaction.id} className="flex items-center gap-4">
+          {/* Placeholder for thumbnail - ideally would use reaction.reaction_video_storage_path */}
+          {/* For now, display a simple placeholder or status */}
+          <div className="relative h-16 w-28 overflow-hidden rounded-md bg-muted flex items-center justify-center text-center text-xs p-2">
+             {/* Display status or a placeholder icon */}
+             <span className="text-muted-foreground">{reaction.status}</span>
           </div>
           <div className="flex-1 space-y-1">
-            <p className="font-medium">Reacting to Viral TikTok #{i}</p>
+            {/* Display reaction title or source URL */}
+            <p className="font-medium">{reaction.title || reaction.source_video_url}</p>
             <div className="flex items-center text-xs text-muted-foreground">
-              <span>2.4K views</span>
+              {/* Display status and creation date */}
+              <span>Status: {reaction.status}</span>
               <span className="mx-1">•</span>
-              <span>
-                {i} day{i !== 1 ? "s" : ""} ago
-              </span>
+              <span>Created: {new Date(reaction.created_at).toLocaleDateString()}</span>
             </div>
           </div>
           <DropdownMenu>
@@ -44,15 +57,23 @@ export function RecentReactions() {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Edit</DropdownMenuItem>
-              <DropdownMenuItem>Share</DropdownMenuItem>
-              <DropdownMenuItem>Analytics</DropdownMenuItem>
+              {/* Update links/actions to use reaction.id */}
+              <DropdownMenuItem asChild>
+                <Link href={`/dashboard/reactions/${reaction.id}/edit`} className="flex w-full">Edit</Link> {/* Placeholder link */}
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                 <Link href={`/dashboard/reactions/${reaction.id}/share`} className="flex w-full">Share</Link> {/* Placeholder link */}
+              </DropdownMenuItem>
+               <DropdownMenuItem asChild>
+                 <Link href={`/dashboard/reactions/${reaction.id}/analytics`} className="flex w-full">Analytics</Link> {/* Placeholder link */}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* Implement delete functionality later */}
               <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       ))}
     </div>
-  )
+  );
 }

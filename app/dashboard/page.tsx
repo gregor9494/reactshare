@@ -9,6 +9,31 @@ import { ScheduledPosts } from "@/components/dashboard/scheduled-posts"
 import { StorageUsage } from "@/components/dashboard/storage-usage"
 import { auth } from "@/auth"; // Import the auth function
 import { redirect } from 'next/navigation'; // Import redirect
+import { createClient } from '@supabase/supabase-js'; // Import Supabase client
+
+// Define the Reaction interface directly here temporarily to fix the TypeScript error
+interface Reaction {
+  id: string;
+  user_id: string;
+  source_video_url: string;
+  reaction_video_storage_path: string | null;
+  title: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Initialize Supabase client for server-side operations
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Supabase URL or Service Key missing in environment variables.');
+  // We'll handle this in the component
+}
+
+// Create a Supabase admin client for server component
+const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 export default async function DashboardPage() { // Make the component async
   const session = await auth(); // Get session server-side
@@ -20,6 +45,31 @@ export default async function DashboardPage() { // Make the component async
   }
 
   const userEmail = session.user.email || 'User'; // Get user email or default
+
+  // Fetch reactions directly from Supabase instead of using the API route
+  let reactions: Reaction[] = [];
+  try {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Cannot fetch reactions: Supabase credentials missing');
+    } else {
+      // Fetch reactions for the logged-in user directly from Supabase
+      const { data, error } = await supabaseAdmin
+        .from('reactions')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Supabase Fetch Reactions Error:', error.message);
+      } else {
+        reactions = data || [];
+        console.log(`Fetched ${reactions.length} reactions for user ${session.user.id}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching reactions:', error);
+  }
+
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -40,23 +90,26 @@ export default async function DashboardPage() { // Make the component async
               <Button>Create New Reaction</Button>
             </Link>
           </div>
+          {/* Placeholder cards - replace with dynamic data or remove */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Total Reactions</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">127</div>
-                <p className="text-xs text-muted-foreground">+5.4% from last month</p>
+                {/* Display actual count */}
+                <div className="text-2xl font-bold">{reactions.length}</div>
+                <p className="text-xs text-muted-foreground">Based on your reactions</p> {/* Updated description */}
               </CardContent>
             </Card>
+            {/* Remove or update other static cards as needed */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Total Views</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">54.3K</div>
-                <p className="text-xs text-muted-foreground">+12.7% from last month</p>
+                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+                <p className="text-xs text-muted-foreground">Views not tracked in MVP</p> {/* Updated description */}
               </CardContent>
             </Card>
             <Card>
@@ -64,8 +117,8 @@ export default async function DashboardPage() { // Make the component async
                 <CardTitle className="text-sm font-medium">Engagement Rate</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">4.3%</div>
-                <p className="text-xs text-muted-foreground">+0.2% from last month</p>
+                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+                <p className="text-xs text-muted-foreground">Engagement not tracked in MVP</p> {/* Updated description */}
               </CardContent>
             </Card>
             <Card>
@@ -73,8 +126,8 @@ export default async function DashboardPage() { // Make the component async
                 <CardTitle className="text-sm font-medium">Scheduled Posts</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">8</div>
-                <p className="text-xs text-muted-foreground">Next post in 2 hours</p>
+                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+                <p className="text-xs text-muted-foreground">Scheduling not in MVP</p> {/* Updated description */}
               </CardContent>
             </Card>
           </div>
@@ -85,16 +138,18 @@ export default async function DashboardPage() { // Make the component async
                 <CardDescription>Your latest reaction videos</CardDescription>
               </CardHeader>
               <CardContent>
-                <RecentReactions />
+                {/* Pass fetched reactions to RecentReactions */}
+                <RecentReactions reactions={reactions} />
               </CardContent>
             </Card>
+            {/* Remove or update other components as needed */}
             <Card className="col-span-3">
               <CardHeader>
                 <CardTitle>Analytics Summary</CardTitle>
                 <CardDescription>Your content performance</CardDescription>
               </CardHeader>
               <CardContent>
-                <AnalyticsSummary />
+                <AnalyticsSummary /> {/* Keep placeholder for now */}
               </CardContent>
             </Card>
             <Card className="col-span-4">
@@ -103,7 +158,7 @@ export default async function DashboardPage() { // Make the component async
                 <CardDescription>Upcoming content releases</CardDescription>
               </CardHeader>
               <CardContent>
-                <ScheduledPosts />
+                <ScheduledPosts /> {/* Keep placeholder for now */}
               </CardContent>
             </Card>
             <Card className="col-span-3">
@@ -112,12 +167,25 @@ export default async function DashboardPage() { // Make the component async
                 <CardDescription>Your cloud storage allocation</CardDescription>
               </CardHeader>
               <CardContent>
-                <StorageUsage />
+                <StorageUsage /> {/* Keep placeholder for now */}
               </CardContent>
             </Card>
           </div>
         </main>
       </div>
     </div>
-  )
+  );
 }
+
+// Define a basic type for Reaction if not already in lib/types.ts
+// You might need to create lib/types.ts if it doesn't exist
+// export interface Reaction {
+//   id: string;
+//   user_id: string;
+//   source_video_url: string;
+//   reaction_video_storage_path: string | null;
+//   title: string | null;
+//   status: string;
+//   created_at: string;
+//   updated_at: string;
+// }
