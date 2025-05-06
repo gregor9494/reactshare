@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2 } from "lucide-react"; // Keep icons
+import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download } from "lucide-react"; // Added Download icon
 import { Reaction } from '@/lib/types'; // Import Reaction type
 
 // Define props interface
@@ -57,7 +57,23 @@ export function VideoGrid({ reactions }: VideoGridProps) {
             <Button variant="outline" size="sm">
               Share
             </Button>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // If videos are selected, initiate bulk download
+                if (selectedVideos.length > 0) {
+                  selectedVideos.forEach(id => {
+                    const reaction = reactions.find(r => r.id === id);
+                    if (reaction && reaction.reaction_video_storage_path) {
+                      // Open download in new tab/window
+                      window.open(`/api/reactions/download?id=${id}`, '_blank');
+                    }
+                  });
+                }
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
               Download
             </Button>
             <Button variant="destructive" size="sm">
@@ -143,6 +159,17 @@ export function VideoGrid({ reactions }: VideoGridProps) {
                     <DropdownMenuItem>
                       <BarChart3 className="mr-2 h-4 w-4" />
                       Analytics {/* Placeholder action */}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (reaction.reaction_video_storage_path) {
+                          window.open(`/api/reactions/download?id=${reaction.id}`, '_blank');
+                        }
+                      }}
+                      disabled={!reaction.reaction_video_storage_path}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem className="text-destructive">

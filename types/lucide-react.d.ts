@@ -16,6 +16,11 @@ declare module 'lucide-react' {
   export const Edit: Icon;
   export const Facebook: Icon;
   export const Instagram: Icon;
+  export const LayoutGrid: Icon;
+  export const LayoutPanelTop: Icon;
+  export const Maximize2: Icon;
+  export const Minimize2: Icon;
+  export const MoveHorizontal: Icon;
   export const Mic: Icon;
   export const Monitor: Icon;
   export const MoreHorizontal: Icon;

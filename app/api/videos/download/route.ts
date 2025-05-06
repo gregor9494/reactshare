@@ -10,7 +10,39 @@ import YTDlpWrap from 'yt-dlp-wrap';
 
 // Schema for validating the download request
 const downloadSchema = z.object({
-  url: z.string().url({ message: 'Invalid video URL' }),
+  url: z.string()
+    .url({ message: 'Invalid video URL format' })
+    .refine(
+      (url) => {
+        try {
+          // Check if it's from a supported platform
+          const supportedDomains = [
+            // Video platforms
+            'youtube.com', 'youtu.be', 'vimeo.com',
+            'tiktok.com', 'vm.tiktok.com',
+            'instagram.com', 'twitter.com', 'x.com',
+            'facebook.com', 'fb.watch', 'fb.com',
+            'twitch.tv', 'clips.twitch.tv',
+            'dailymotion.com', 'dai.ly',
+            
+            // Additional supported platforms by yt-dlp
+            'reddit.com', 'linkedin.com', 'tumblr.com',
+            'soundcloud.com', 'imgur.com', 'gfycat.com',
+            'streamable.com', 'bitchute.com', 'odysee.com',
+            'rutube.ru', 'vk.com', 'bilibili.com'
+          ];
+          
+          // Extract domain from URL
+          const domain = new URL(url).hostname.replace('www.', '');
+          
+          // Check if the domain or any of its parts match our supported list
+          return supportedDomains.some(d => domain === d || domain.endsWith(`.${d}`) || domain.includes(`.${d}`));
+        } catch (e) {
+          return false;
+        }
+      },
+      { message: 'Please provide a URL from a supported video platform (YouTube, TikTok, Twitter, etc.)' }
+    ),
 });
 
 // Initialize Supabase client
@@ -67,18 +99,86 @@ export async function POST(request: Request) {
     
     const sourceVideo = sourceVideos[0];
     
+    // Check if video information can be retrieved before starting download
+    const videoInfo = {
+      title: '',
+      platform: '',
+      duration: 0,
+      availability: true
+    };
+    
+    try {
+      // Create temporary ytDlp instance to check video info
+      const ytDlp = new YTDlpWrap();
+      const infoCommand = [
+        url,
+        '--dump-single-json',
+        '--no-playlist',
+        '--no-check-certificate',
+        '--geo-bypass'
+      ];
+      
+      // Set a 30 second timeout for info retrieval
+      const infoPromise = ytDlp.execPromise(infoCommand);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Video info retrieval timed out')), 30000);
+      });
+      
+      // Race the info retrieval against the timeout
+      const infoResult = await Promise.race([infoPromise, timeoutPromise]);
+      
+      if (infoResult) {
+        try {
+          // Handle different output types from yt-dlp
+          let info;
+          if (typeof infoResult === 'string') {
+            info = JSON.parse(infoResult);
+          } else if (typeof infoResult === 'object') {
+            info = infoResult;
+          } else {
+            throw new Error('Unexpected result type from yt-dlp');
+          }
+          videoInfo.title = info.title || '';
+          videoInfo.platform = info.extractor || '';
+          videoInfo.duration = info.duration || 0;
+          
+          // If duration is too long (over 10 minutes), add a warning
+          if (videoInfo.duration > 600) {
+            console.warn(`Long video detected (${Math.floor(videoInfo.duration / 60)} minutes), may take longer to process`);
+          }
+          
+          // Update the database record with the info
+          await supabaseAdmin
+            .from('source_videos')
+            .update({
+              title: videoInfo.title,
+              platform: videoInfo.platform,
+              duration: videoInfo.duration
+            })
+            .eq('id', sourceVideo.id);
+          
+        } catch (parseError) {
+          console.warn('Could not parse video info result:', parseError);
+        }
+      }
+    } catch (infoError) {
+      console.warn('Could not retrieve video info:', infoError);
+      // Don't fail the process, just note the warning
+    }
+    
     // Start the download process asynchronously
-    // We'll return a response to the client, but keep processing in the background
     downloadVideo(url, userId, sourceVideo.id, fileName).catch(error => {
       console.error(`Error in background download process for ${url}:`, error);
       // Background process will update the database with the error status
     });
     
-    // Return a response to the client
+    // Return a response to the client with any available metadata
     return NextResponse.json({
       id: sourceVideo.id,
       url: url,
       status: 'processing',
+      title: videoInfo.title || undefined,
+      platform: videoInfo.platform || undefined,
       message: 'Video download initiated. This may take a few minutes.',
     }, { status: 202 }); // 202 Accepted indicates the request has been accepted for processing
     
@@ -116,7 +216,7 @@ export async function GET(request: Request) {
       .eq('user_id', userId); // Ensure the user can only access their own downloads
     
     // Log the results for debugging
-    console.log('Query results:', { count: videos?.length, error });
+    console.log('Query results:', { count: videos?.length, error, firstVideo: videos?.[0] });
       
     if (error) {
       console.error('Error fetching source video:', error);
@@ -130,14 +230,36 @@ export async function GET(request: Request) {
     // Use the first result
     const data = videos[0];
     
-    // Return the actual status from the database
-    return NextResponse.json({
+    // Prepare extended response based on status
+    const response: any = {
       id: data.id,
       url: data.url,
       status: data.status,
       storage_path: data.storage_path,
-      error: data.error_message || null,
-    });
+      title: data.title,
+      platform: data.platform,
+    };
+    
+    // Add error if present
+    if (data.error_message) {
+      response.error = data.error_message;
+    }
+    
+    // Add additional information for completed videos
+    if (data.status === 'completed') {
+      response.public_url = data.public_url;
+      response.duration = data.duration;
+      response.processing_time_seconds = data.processing_time_seconds;
+      response.completed_at = data.completed_at;
+    }
+    
+    // Add progress if available
+    if (data.download_progress !== undefined && data.download_progress !== null) {
+      response.progress = data.download_progress;
+    }
+    
+    // Return the enhanced status response
+    return NextResponse.json(response);
     
   } catch (error) {
     console.error('Unexpected error checking download status:', error);
@@ -149,6 +271,10 @@ export async function GET(request: Request) {
  * Downloads a video using yt-dlp and uploads it to Supabase Storage
  */
 async function downloadVideo(url: string, userId: string, sourceId: string, fileName: string) {
+  // Log download start time for performance tracking
+  const startTime = Date.now();
+  console.log(`[${sourceId}] Starting download process for ${url}`);
+  
   // Create a temporary directory for the download
   const tempDir = path.join(os.tmpdir(), `reactshare-${uuidv4()}`);
   await fs.ensureDir(tempDir);
@@ -163,17 +289,112 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
     // Update status to downloading
     await updateSourceVideoStatus(sourceId, 'downloading');
     
-    // Set download options
+    // Set download options with enhanced format selection and more features
     const options = [
       url,
-      '--format', 'mp4',  // Prefer MP4 format
+      // Format selection - enhanced for better compatibility
+      '--format', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
       '--output', outputPath,
       '--no-playlist',    // Don't download playlists
       '--max-filesize', '50m',  // Limit file size to 50MB to ensure compatibility with Supabase
+      '--no-warnings',    // Less verbose output
+      '--geo-bypass',     // Try to bypass geo-restrictions
+      '--ignore-errors',  // Continue on download errors
+      '--no-check-certificate',  // Ignore SSL cert validation for some sites
+      '--extractor-retries', '3',  // Retry extractor on failure
+      '--max-sleep-interval', '5', // Don't sleep too long between retries
+      '--force-ipv4',     // Sometimes helps with network issues
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36', // Mimic browser
+      '--add-header', 'Accept-Language:en-US,en;q=0.9', // Set language header
+      '--socket-timeout', '30',  // Don't hang indefinitely
     ];
     
-    // Execute the download
-    await ytDlp.execPromise(options);
+    // Execute download with fallback for errors
+    try {
+      // Note: We can't use onProgress due to typing issues with yt-dlp-wrap
+      // Instead, we'll just log key steps in the process
+      console.log(`[${sourceId}] Starting download from ${url}`);
+      
+      // Add the --verbose flag to get more output for debugging
+      options.push('--verbose');
+      
+      await ytDlp.execPromise(options);
+      
+      console.log(`[${sourceId}] Download completed successfully`);
+    } catch (error) {
+      console.error(`[${sourceId}] yt-dlp download error:`, error);
+      
+      // Type guard to check if error is an object with a message property
+      const downloadError = error as { message?: string };
+      const errorMessage = downloadError.message || 'Unknown error';
+      
+      // Try multiple fallback strategies based on the error type
+      if (errorMessage.includes('format') || errorMessage.includes('codec')) {
+        console.log(`[${sourceId}] Trying fallback #1: simpler format...`);
+        
+        try {
+          const fallbackOptions = [
+            url,
+            '--format', 'best',  // Just get the best available format
+            '--output', outputPath,
+            '--no-playlist',
+            '--max-filesize', '50m',
+          ];
+          
+          // Try the basic format fallback
+          await ytDlp.execPromise(fallbackOptions);
+          console.log(`[${sourceId}] Fallback #1 succeeded`);
+          
+        } catch (fallbackError) {
+          console.error(`[${sourceId}] Fallback #1 failed, trying fallback #2: forcing format...`);
+          
+          try {
+            // Try an even more basic fallback with format forcing
+            const secondFallbackOptions = [
+              url,
+              '--format', 'mp4',  // Force mp4
+              '--output', outputPath,
+              '--force-overwrites',
+              '--no-check-certificate',
+              '--max-filesize', '50m',
+            ];
+            
+            await ytDlp.execPromise(secondFallbackOptions);
+            console.log(`[${sourceId}] Fallback #2 succeeded`);
+            
+          } catch (secondFallbackError) {
+            console.error(`[${sourceId}] All fallbacks failed, throwing error`);
+            throw new Error(`Failed to download video after multiple attempts: ${errorMessage}`);
+          }
+        }
+      } else if (errorMessage.includes('unavailable') || errorMessage.includes('private')) {
+        throw new Error(`Video is unavailable or private: ${errorMessage}`);
+      } else if (errorMessage.includes('copyright') || errorMessage.includes('blocked')) {
+        throw new Error(`Content is blocked due to copyright restrictions: ${errorMessage}`);
+      } else if (errorMessage.includes('geo') || errorMessage.includes('country')) {
+        // Try again with stronger geo bypass
+        console.log(`[${sourceId}] Trying fallback with stronger geo-bypass...`);
+        
+        try {
+          const geoBypassOptions = [
+            url,
+            '--format', 'best',
+            '--output', outputPath,
+            '--no-playlist',
+            '--geo-bypass-country', 'US',  // Try US proxy
+            '--geo-bypass',
+            '--force-ipv4',  // Sometimes helps with geo-restrictions
+          ];
+          
+          await ytDlp.execPromise(geoBypassOptions);
+        } catch (geoError) {
+          throw new Error(`Content is geo-restricted and bypass failed: ${errorMessage}`);
+        }
+      } else {
+        throw new Error(`Download failed: ${errorMessage}`);
+      }
+    }
     
     // Check if file exists and has content
     const fileStats = await fs.stat(outputPath);
@@ -197,7 +418,7 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
       .upload(storagePath, fileBuffer, {
         contentType: 'video/mp4',
         cacheControl: '3600',
-        upsert: false,
+        upsert: true, // Allow upsert in case of retries
       });
       
     if (uploadError) {
@@ -209,20 +430,52 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
       .from(BUCKET_NAME)
       .getPublicUrl(storagePath);
       
-    // Update the database record with successful status
-    await updateSourceVideoStatus(sourceId, 'completed', null, publicUrlData?.publicUrl);
+    // Calculate performance metrics
+    const endTime = Date.now();
+    const durationSeconds = (endTime - startTime) / 1000;
+    
+    console.log(`[${sourceId}] Download and upload completed in ${durationSeconds.toFixed(2)} seconds`);
+    
+    // Update the database record with successful status and timing information
+    await updateSourceVideoStatus(
+      sourceId,
+      'completed',
+      null,
+      publicUrlData?.publicUrl,
+      {
+        processing_time_seconds: durationSeconds,
+        completed_at: new Date().toISOString()
+      }
+    );
     
   } catch (error: any) {
-    console.error('Video download error:', error);
+    console.error(`[${sourceId}] Video download error:`, error);
+    
+    // Get a more helpful error message
+    const errorMessage = error.message || 'Unknown error during video download';
+    
+    // Add additional context based on error type
+    let detailedError = errorMessage;
+    
+    if (errorMessage.includes('unavailable')) {
+      detailedError = `Video is unavailable or private: ${errorMessage}`;
+    } else if (errorMessage.includes('copyright')) {
+      detailedError = `Content blocked due to copyright: ${errorMessage}`;
+    } else if (errorMessage.includes('geo')) {
+      detailedError = `Content geo-restricted: ${errorMessage}`;
+    } else if (errorMessage.includes('format')) {
+      detailedError = `Format conversion error: ${errorMessage}`;
+    }
     
     // Update database with error status
-    await updateSourceVideoStatus(sourceId, 'error', error.message);
+    await updateSourceVideoStatus(sourceId, 'error', detailedError);
   } finally {
     // Clean up temporary directory
     try {
       await fs.remove(tempDir);
+      console.log(`[${sourceId}] Cleaned up temporary directory: ${tempDir}`);
     } catch (cleanupError) {
-      console.error('Error cleaning up temp directory:', cleanupError);
+      console.error(`[${sourceId}] Error cleaning up temp directory:`, cleanupError);
     }
   }
 }
@@ -234,7 +487,8 @@ async function updateSourceVideoStatus(
   sourceId: string,
   status: string,
   errorMessage?: string | null,
-  publicUrl?: string | null
+  publicUrl?: string | null,
+  additionalData?: Record<string, any>
 ) {
   try {
     const updateData: any = { status };
@@ -247,6 +501,11 @@ async function updateSourceVideoStatus(
       updateData.public_url = publicUrl;
     }
     
+    // Add any additional data fields if provided
+    if (additionalData && typeof additionalData === 'object') {
+      Object.assign(updateData, additionalData);
+    }
+    
     const { error } = await supabaseAdmin
       .from('source_videos')
       .update(updateData)
@@ -254,6 +513,8 @@ async function updateSourceVideoStatus(
       
     if (error) {
       console.error(`Error updating source video status to ${status}:`, error);
+      // Add more details about the update attempt
+      console.log('Update attempt details:', { sourceId, status, errorMessage, publicUrl });
     }
   } catch (err) {
     console.error(`Unexpected error updating source video status to ${status}:`, err);
@@ -289,6 +550,23 @@ async function ensureBucketExists(bucketName: string) {
       }
       
       console.log(`Bucket "${bucketName}" created successfully.`);
+      
+      // Update bucket settings to ensure it's properly configured for video access
+      const { error: updateError } = await supabaseAdmin.storage.updateBucket(bucketName, {
+        public: true,
+        allowedMimeTypes: ['video/mp4', 'video/webm'],
+        fileSizeLimit: 52428800, // 50MB limit
+      });
+      
+      if (updateError) {
+        console.error('Error updating bucket settings:', updateError);
+      } else {
+        console.log(`Bucket "${bucketName}" settings updated successfully.`);
+      }
+      
+      // Note: CORS settings cannot be set via the JavaScript client,
+      // they must be set in the Supabase dashboard
+      console.log(`Remember to configure CORS settings for bucket "${bucketName}" in the Supabase dashboard`);
     } else {
       console.log(`Bucket "${bucketName}" already exists.`);
     }

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link"; // Import Link if needed for reaction details page
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -64,8 +64,19 @@ export function RecentReactions({ reactions }: RecentReactionsProps) {
               <DropdownMenuItem asChild>
                  <Link href={`/dashboard/reactions/${reaction.id}/share`} className="flex w-full">Share</Link> {/* Placeholder link */}
               </DropdownMenuItem>
-               <DropdownMenuItem asChild>
+              <DropdownMenuItem asChild>
                  <Link href={`/dashboard/reactions/${reaction.id}/analytics`} className="flex w-full">Analytics</Link> {/* Placeholder link */}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  if (reaction.reaction_video_storage_path) {
+                    window.open(`/api/reactions/download?id=${reaction.id}`, '_blank');
+                  }
+                }}
+                disabled={!reaction.reaction_video_storage_path}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {/* Implement delete functionality later */}

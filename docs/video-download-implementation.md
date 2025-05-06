@@ -1,119 +1,95 @@
-# Video Download Implementation with yt-dlp
+# Video Download Implementation
 
-This document describes the implementation of video downloading using the `yt-dlp` library for the ReactShare application.
+This document describes the implementation of video downloading functionality in ReactShare, which uses the `yt-dlp` library to download videos from various platforms.
 
-## Overview
+## Architecture Overview
 
-The implementation allows users to:
-- Enter URLs from various video platforms (YouTube, TikTok, Twitter, etc.)
-- Download the videos using the yt-dlp library
-- Store the videos in Supabase storage
-- Track download status and handle errors
+The video download system consists of the following components:
 
-## Setup Requirements
+1. **API Endpoint** (`app/api/videos/download/route.ts`): Handles requests to download videos from supported platforms
+2. **Database Schema** (`source_videos` table): Stores metadata and status of video downloads
+3. **Storage Integration** (Supabase Storage): Stores the downloaded video files
+4. **yt-dlp Integration**: Uses the powerful yt-dlp utility to handle downloads from multiple platforms
 
-### 1. Install yt-dlp
+## Workflow
 
-The system requires the `yt-dlp` binary to be installed on the server machine. It should be available in the PATH.
+1. User submits a URL to download
+2. API validates the URL and creates a database record with status `processing`
+3. System fetches metadata about the video (title, duration, platform)
+4. Download process begins asynchronously
+5. User can check download status via GET endpoint
+6. When complete, video is available in Supabase storage
+
+## Key Features
+
+- **Platform Support**: Downloads from 20+ platforms including YouTube, TikTok, Instagram, Twitter, etc.
+- **Robust Error Handling**: Multiple fallback mechanisms to handle platform-specific issues
+- **Progress Tracking**: Records download progress and performance metrics
+- **Metadata Extraction**: Retrieves useful metadata like title, platform, and duration
+- **Efficient Storage**: Uses temporary storage for processing before uploading to permanent storage
+
+## Download Stages
+
+Videos go through the following stages during processing:
+
+1. **Processing**: Initial state when request is received
+2. **Downloading**: Video is being downloaded from the source platform
+3. **Uploading**: Video is being uploaded to Supabase storage
+4. **Completed**: Video is successfully downloaded and stored
+5. **Error**: An error occurred during the process
+
+## Error Handling Strategy
+
+The system implements a multi-layered error handling approach:
+
+1. **Format Fallbacks**: If the preferred format is unavailable, falls back to simpler formats
+2. **Platform-Specific Handling**: Custom error handling for different platforms
+3. **Geo-restriction Bypassing**: Attempts to bypass geo-restrictions when possible
+4. **Detailed Error Messages**: Provides specific error messages for better debugging
+
+## Database Schema
+
+The `source_videos` table includes:
+
+- `id`: Unique identifier for the download
+- `user_id`: User who requested the download
+- `url`: Original URL of the video
+- `status`: Current status of the download
+- `storage_path`: Path in Supabase storage
+- `public_url`: Public URL to access the video
+- `title`: Title of the video
+- `platform`: Platform the video was downloaded from
+- `duration`: Duration of the video in seconds
+- `error_message`: Error message if download failed
+- `download_progress`: Progress percentage (0-100)
+- `processing_time_seconds`: Time taken to download and process
+- `completed_at`: Timestamp when processing completed
+
+## Configuration
+
+The system uses several environment variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase instance URL
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key for storage access
+
+## Testing and Debugging
+
+A test script is included in `scripts/test-yt-dlp.js` to verify yt-dlp functionality with any URL:
 
 ```bash
-# On macOS with Homebrew
-brew install yt-dlp
-
-# On Ubuntu/Debian
-sudo apt update
-sudo apt install yt-dlp
-
-# On Windows with Chocolatey
-choco install yt-dlp
+node scripts/test-yt-dlp.js https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ```
-
-Verify it's installed correctly:
-```bash
-yt-dlp --version
-```
-
-### 2. Required NPM Packages
-
-The following additional packages are needed:
-- `yt-dlp-wrap`: Node.js wrapper for yt-dlp
-- `fs-extra`: Enhanced file system operations
-
-These should already be installed by running:
-```bash
-pnpm add yt-dlp-wrap fs-extra @types/fs-extra
-```
-
-### 3. Database Migration
-
-Run the SQL migration to add the necessary columns to the `source_videos` table in Supabase:
-
-1. Navigate to the Supabase dashboard
-2. Go to SQL Editor
-3. Execute the SQL in the `migrations/add_columns_to_source_videos.sql` file
-   
-This adds:
-- `error_message`: Stores any error messages during download
-- `public_url`: Stores the public URL to access the video
-
-### 4. Supabase Storage Setup
-
-The `source-videos` bucket in Supabase Storage will be automatically created when the first video is downloaded. The implementation includes code to check if the bucket exists and create it if it doesn't.
-
-The bucket is created with:
-- Public access enabled (for easy playback)
-- Default file size limits based on your Supabase plan
-
-If you prefer to create it manually instead:
-1. Go to Storage in the Supabase dashboard
-2. Create a new bucket named `source-videos`
-3. Configure the permissions as needed for your security requirements
-
-## How It Works
-
-### Backend Process
-
-1. **Request Handling**: 
-   - User submits a video URL through the frontend
-   - API endpoint validates the URL and creates a database record
-   - Backend initiates an asynchronous download process
-
-2. **Video Download**:
-   - Uses yt-dlp to download the video to a temporary location
-   - Supports various platforms (YouTube, Vimeo, TikTok, Instagram, etc.)
-   - Configures format (MP4) and size limits
-
-3. **Storage Upload**:
-   - Uploads the downloaded video to Supabase storage
-   - Updates the database record with status and public URL
-   - Cleans up temporary files
-
-4. **Status Tracking**:
-   - Updates database with download progress: `processing`, `downloading`, `uploading`, `completed`, or `error`
-   - Stores error messages when issues occur
-
-### Frontend Integration
-
-1. **User Interface**:
-   - User enters a URL in the create page
-   - UI shows download progress and status
-   
-2. **Status Polling**:
-   - Frontend polls the API to check download status
-   - Updates the UI based on the current status
-   - Handles success and error cases
-
-## Troubleshooting
-
-Common issues and solutions:
-
-- **Download fails**: Check if yt-dlp is correctly installed and in PATH
-- **Permission errors**: Ensure proper permissions for temporary directories and Supabase storage
-- **Unsupported URL**: yt-dlp may not support some platforms; check compatibility
-- **Timeout issues**: Large videos may take longer to download; consider increasing timeouts
 
 ## Limitations
 
-- **File Size**: Currently limited to 50MB to prevent storage issues with Supabase
-- **Platform Support**: Limited to platforms supported by yt-dlp
-- **Processing Time**: No progress reporting during download, just status updates
+- Maximum file size is limited to 50MB to ensure compatibility with Supabase storage
+- Some platforms may implement anti-scraping measures that prevent downloads
+- Processing time varies based on video length and platform responsiveness
+
+## Future Improvements
+
+- Implement webhook notifications when downloads complete
+- Add support for audio-only downloads
+- Support for playlists and multiple downloads
+- Advanced transcoding options
+- Scheduled downloads with retry mechanisms

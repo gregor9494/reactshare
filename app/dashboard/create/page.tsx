@@ -97,6 +97,7 @@ export default function CreatePage() {
 
   // Handle recording completion
   const handleRecordingComplete = (blob: Blob) => {
+    console.log('Recording completed, blob type:', blob.type, 'size:', blob.size);
     setRecordedBlob(blob);
     // Create reaction metadata
     createReactionMetadata(blob);
@@ -230,7 +231,7 @@ export default function CreatePage() {
         
         const statusResult = await statusResponse.json();
         
-        console.log('Download status result:', statusResult);
+        console.log('Download status result:', JSON.stringify(statusResult, null, 2));
 
         // Check for error message first
         if (statusResult.error) {
@@ -247,6 +248,7 @@ export default function CreatePage() {
           case 'completed':
             setIsLoading(false);
             setMessage({ type: 'success', text: 'Source video downloaded successfully!' });
+            console.log('Download completed successfully, source_video_id:', downloadId);
             setCurrentStep('record');
             return true; // Stop polling
             
@@ -431,6 +433,10 @@ export default function CreatePage() {
           {/* Step 2: Recording */}
           {currentStep === 'record' && (
             <>
+              {/* Log the sourceVideoId to help debug */}
+              <div className="mb-2 text-xs text-muted-foreground">
+                Using source video ID: {sourceVideoId}
+              </div>
               <VideoRecorder
                 sourceVideoId={sourceVideoId || undefined}
                 onRecordingComplete={handleRecordingComplete}
@@ -449,6 +455,12 @@ export default function CreatePage() {
           {/* Step 3: Editing */}
           {currentStep === 'edit' && (
             <>
+              {/* Add debug information */}
+              {recordedBlob && (
+                <div className="mb-2 text-xs text-muted-foreground">
+                  Using recorded blob: {recordedBlob.type}, size: {Math.round(recordedBlob.size / 1024)} KB
+                </div>
+              )}
               <VideoEditor
                 recordedBlob={recordedBlob || undefined}
                 onEditingComplete={handleEditingComplete}

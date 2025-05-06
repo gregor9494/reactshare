@@ -26,12 +26,36 @@ export function VideoEditor({ recordedBlob, onEditingComplete }: VideoEditorProp
   // Set up video when recordedBlob changes
   useEffect(() => {
     if (recordedBlob && videoRef.current) {
+      console.log('Setting up VideoEditor with recordedBlob:', recordedBlob.type, recordedBlob.size);
       const videoUrl = URL.createObjectURL(recordedBlob);
       videoRef.current.src = videoUrl;
       
-      // Clean up URL when component unmounts
+      // Set up event listeners for debugging
+      const handleVideoError = (e: Event) => {
+        console.error('VideoEditor - Error loading video:', videoRef.current?.error);
+      };
+      
+      const handleCanPlay = () => {
+        console.log('VideoEditor - Video can now play');
+      };
+      
+      const handleLoadedData = () => {
+        console.log('VideoEditor - Video data loaded');
+      };
+      
+      // Add event listeners
+      videoRef.current.addEventListener('error', handleVideoError);
+      videoRef.current.addEventListener('canplay', handleCanPlay);
+      videoRef.current.addEventListener('loadeddata', handleLoadedData);
+      
+      // Clean up URL and event listeners when component unmounts
       return () => {
         URL.revokeObjectURL(videoUrl);
+        if (videoRef.current) {
+          videoRef.current.removeEventListener('error', handleVideoError);
+          videoRef.current.removeEventListener('canplay', handleCanPlay);
+          videoRef.current.removeEventListener('loadeddata', handleLoadedData);
+        }
       };
     }
   }, [recordedBlob]);
@@ -121,13 +145,15 @@ export function VideoEditor({ recordedBlob, onEditingComplete }: VideoEditorProp
       <CardContent className="space-y-6 px-0">
         {/* Video Preview */}
         <div className="aspect-video overflow-hidden rounded-md bg-black relative">
-          <video 
+          <video
             ref={videoRef}
             className="h-full w-full object-contain"
             onLoadedMetadata={handleMetadataLoaded}
             onTimeUpdate={handleTimeUpdate}
             onClick={togglePlay}
             playsInline
+            crossOrigin="anonymous"
+            onError={(e) => console.error("VideoEditor - Video error event:", e)}
           />
           
           {/* Play button overlay */}
