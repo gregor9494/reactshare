@@ -292,9 +292,9 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
     // Set download options with enhanced format selection and more features
     const options = [
       url,
-      // Format selection - enhanced for better compatibility
-      '--format', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[ext=mp4]/best',
-      '--merge-output-format', 'mp4',
+      // Format selection - aiming for wide compatibility, then relying on fallbacks
+      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+      '--merge-output-format', 'mp4', // Ensure output is mp4
       '--output', outputPath,
       '--no-playlist',    // Don't download playlists
       '--max-filesize', '50m',  // Limit file size to 50MB to ensure compatibility with Supabase
@@ -303,6 +303,7 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
       '--ignore-errors',  // Continue on download errors
       '--no-check-certificate',  // Ignore SSL cert validation for some sites
       '--extractor-retries', '3',  // Retry extractor on failure
+      '--min-sleep-interval', '1', // ADDED: min sleep interval
       '--max-sleep-interval', '5', // Don't sleep too long between retries
       '--force-ipv4',     // Sometimes helps with network issues
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36', // Mimic browser
@@ -503,7 +504,16 @@ async function updateSourceVideoStatus(
     
     // Add any additional data fields if provided
     if (additionalData && typeof additionalData === 'object') {
-      Object.assign(updateData, additionalData);
+      const { completed_at, processing_time_seconds, ...restOfAdditionalData } = additionalData; // Destructure further
+      if (Object.keys(restOfAdditionalData).length > 0) {
+        Object.assign(updateData, restOfAdditionalData);
+      }
+      if (completed_at) {
+        console.log(`[${sourceId}] Note: 'completed_at' field was provided for source_videos but is being ignored due to schema mismatch.`);
+      }
+      if (processing_time_seconds) {
+        console.log(`[${sourceId}] Note: 'processing_time_seconds' field was provided for source_videos but is being ignored due to schema mismatch.`);
+      }
     }
     
     const { error } = await supabaseAdmin

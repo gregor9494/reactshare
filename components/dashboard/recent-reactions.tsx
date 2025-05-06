@@ -1,3 +1,5 @@
+'use client'; // Make this a Client Component because it uses onClick
+
 import Image from "next/image";
 import Link from "next/link"; // Import Link if needed for reaction details page
 import { MoreHorizontal, Download } from "lucide-react";

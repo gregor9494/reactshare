@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 async function downloadReactionVideo(url: string, userId: string, downloadId: string, fileName: string, title: string) {
   // Log download start time
   const startTime = Date.now();
-  console.log(`[${downloadId}] Starting download of reaction from ${url}`);
+  console.log(`[${downloadId}] Entering downloadReactionVideo for URL: ${url}, Title: ${title}`);
 
   // Create a temporary directory for the download
   const tempDir = path.join(os.tmpdir(), `reactshare-download-${uuidv4()}`);
@@ -162,6 +162,8 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
 
   const outputPath = path.join(tempDir, fileName);
   const storagePath = `${userId}/${fileName}`;
+
+  let reactionId: string | undefined; // Declare reactionId here
 
   try {
     // Initialize yt-dlp
@@ -182,7 +184,8 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
       throw new Error(`Failed to create reaction record: ${insertError?.message || 'Unknown error'}`);
     }
 
-    const reactionId = reactionData[0].id;
+    reactionId = reactionData[0].id;
+    console.log(`[${reactionId}] Created reaction record in DB. ID: ${reactionId}`);
 
     // Set download options - similar to the source video download options
     const options = [
@@ -196,21 +199,26 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
       '--geo-bypass',
       '--no-check-certificate',
       '--extractor-retries', '3',
+      '--min-sleep-interval', '1',
+      '--max-sleep-interval', '5',
       '--force-ipv4',
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9', // Added from video download route for consistency
+      '--socket-timeout', '30', // Added from video download route for consistency
+      '--verbose' // Added verbose for more detailed logs on initial attempt
     ];
 
     // Execute download with fallback handling
     try {
-      console.log(`[${reactionId}] Starting download of reaction from ${url}`);
+      console.log(`[${reactionId}] Starting download of reaction from ${url} with options:`, options);
       await ytDlp.execPromise(options);
       console.log(`[${reactionId}] Download completed successfully`);
     } catch (error) {
-      console.error(`[${reactionId}] yt-dlp download error:`, error);
+      console.error(`[${reactionId}] yt-dlp download error (initial attempt):`, error);
       
       // Type guard to check if error has a message property
       const downloadError = error as { message?: string };
-      const errorMessage = downloadError.message || 'Unknown error';
+      const errorMessage = downloadError.message || 'Unknown error from initial attempt';
       
       // Try fallback with simpler format
       try {
@@ -221,32 +229,51 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
           '--output', outputPath,
           '--no-playlist',
           '--max-filesize', '50m',
+          '--no-warnings', // Keep no-warnings for fallback
+          '--ignore-errors', // Add ignore-errors to fallback
+          '--verbose' // Add verbose to fallback for more logs
         ];
-        
+        console.log(`[${reactionId}] Fallback options:`, fallbackOptions);
         await ytDlp.execPromise(fallbackOptions);
         console.log(`[${reactionId}] Fallback download succeeded`);
       } catch (fallbackError) {
-        throw new Error(`Failed to download reaction video after multiple attempts: ${errorMessage}`);
+        console.error(`[${reactionId}] yt-dlp download error (fallback attempt):`, fallbackError);
+        const fallbackErrorMessage = (fallbackError as { message?: string })?.message || 'Unknown error from fallback attempt';
+        throw new Error(`Failed to download reaction video after multiple attempts. Initial: ${errorMessage}. Fallback: ${fallbackErrorMessage}`);
       }
     }
 
     // Check if file exists and has content
+    console.log(`[${reactionId}] Checking file stats for: ${outputPath}`);
     const fileStats = await fs.stat(outputPath);
+    console.log(`[${reactionId}] File stats: ${JSON.stringify(fileStats)}`);
     if (!fileStats.size) {
+      console.error(`[${reactionId}] Downloaded file is empty: ${outputPath}`);
       throw new Error('Downloaded file is empty');
     }
+    console.log(`[${reactionId}] Downloaded file has size: ${fileStats.size}`);
 
     // Update status to uploading
+    if (!reactionId) {
+      console.error(`[${downloadId}] reactionId is undefined before updating status to uploading`);
+      throw new Error("reactionId is undefined before updating status to uploading");
+    }
+    console.log(`[${reactionId}] Updating reaction status to 'uploading'.`);
     await updateReactionStatus(reactionId, 'uploading');
 
     // Ensure the bucket exists
+    console.log(`[${reactionId}] Ensuring bucket '${REACTION_BUCKET_NAME}' exists.`);
     const { error: bucketError } = await ensureBucketExists(REACTION_BUCKET_NAME);
     if (bucketError) {
+      console.error(`[${reactionId}] Failed to ensure bucket exists:`, bucketError);
       throw new Error(`Failed to ensure bucket exists: ${bucketError.message}`);
     }
+    console.log(`[${reactionId}] Bucket '${REACTION_BUCKET_NAME}' ensured.`);
 
     // Upload the file to Supabase Storage
+    console.log(`[${reactionId}] Reading file from ${outputPath} for upload.`);
     const fileBuffer = await fs.readFile(outputPath);
+    console.log(`[${reactionId}] File buffer read, size: ${fileBuffer.length}. Uploading to Supabase at ${storagePath}.`);
     const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
       .from(REACTION_BUCKET_NAME)
       .upload(storagePath, fileBuffer, {
@@ -256,8 +283,10 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
       });
       
     if (uploadError) {
+      console.error(`[${reactionId}] Supabase upload failed:`, uploadError);
       throw new Error(`Supabase upload failed: ${uploadError.message}`);
     }
+    console.log(`[${reactionId}] Supabase upload successful. Data:`, uploadData);
 
     // Get the public URL
     const { data: publicUrlData } = await supabaseAdmin.storage
@@ -271,6 +300,11 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
     console.log(`[${reactionId}] Download and upload completed in ${durationSeconds.toFixed(2)} seconds`);
     
     // Update the reaction record with successful status
+    if (!reactionId) {
+      console.error(`[${downloadId}] reactionId is undefined before final update to 'uploaded'`);
+      throw new Error("reactionId is undefined before final update to 'uploaded'");
+    }
+    console.log(`[${reactionId}] Updating reaction status to 'uploaded' with storage path: ${storagePath}.`);
     await supabaseAdmin
       .from('reactions')
       .update({
@@ -279,28 +313,38 @@ async function downloadReactionVideo(url: string, userId: string, downloadId: st
         updated_at: new Date().toISOString()
       })
       .eq('id', reactionId);
+    console.log(`[${reactionId}] Final status update to 'uploaded' complete.`);
 
   } catch (error: any) {
-    console.error(`Download error:`, error);
+    console.error(`[${reactionId || downloadId}] Error in downloadReactionVideo catch block:`, error);
     
     // Update database with error status if we have a reaction ID
     if (reactionId) {
+      console.log(`[${reactionId}] Updating reaction status to 'error' due to caught exception.`);
       await supabaseAdmin
         .from('reactions')
         .update({
           status: 'error',
+          // Optionally, add error.message to a new column in your DB here
+          // error_message: error.message
           updated_at: new Date().toISOString()
         })
         .eq('id', reactionId);
+      console.log(`[${reactionId}] Status updated to 'error'.`);
+    } else {
+      console.error(`[${downloadId}] Cannot update status to 'error' as reactionId is undefined.`);
     }
   } finally {
+    console.log(`[${reactionId || downloadId}] Entering finally block for downloadReactionVideo.`);
     // Clean up temporary directory
     try {
+      console.log(`[${reactionId || downloadId}] Attempting to remove temporary directory: ${tempDir}`);
       await fs.remove(tempDir);
-      console.log(`Cleaned up temporary directory: ${tempDir}`);
+      console.log(`[${reactionId || downloadId}] Cleaned up temporary directory: ${tempDir}`);
     } catch (cleanupError) {
-      console.error(`Error cleaning up temp directory:`, cleanupError);
+      console.error(`[${reactionId || downloadId}] Error cleaning up temp directory:`, cleanupError);
     }
+    console.log(`[${reactionId || downloadId}] Exiting finally block for downloadReactionVideo.`);
   }
 }
 
