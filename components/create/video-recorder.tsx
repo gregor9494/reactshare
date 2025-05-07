@@ -39,11 +39,13 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const lastVideoStateRef = useRef({ time: 0, playing: false });
   
   // View mode and customization options
   const [viewMode, setViewMode] = useState<'side-by-side' | 'picture-in-picture'>('side-by-side')
   const [reactionPosition, setReactionPosition] = useState({ x: 10, y: 10 }) // Position in percentage for PiP mode
   const [reactionSize, setReactionSize] = useState(30) // Size in percentage for PiP mode (1-100)
+  const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   
   const webcamRef = useRef<HTMLVideoElement>(null)
   const sourceVideoRef = useRef<HTMLVideoElement>(null)
@@ -126,7 +128,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
     }
     
     initializeWebcam()
-  }, [selectedDevices])
+  }, [selectedDevices, viewMode])
   
   // Init logging for video element events
   useEffect(() => {
@@ -204,14 +206,16 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
                 
                 // Add onloadedmetadata event listener to check if video loaded successfully
                 videoElement.onloadedmetadata = () => {
-                  console.log('Source video metadata loaded successfully');
-                  // Try to play the video to check if it works
-                  videoElement.play().then(() => {
-                    console.log('Source video playing successfully');
-                    videoElement.pause(); // Pause it after confirming it works
-                  }).catch(err => {
-                    console.error('Error playing source video after metadata loaded:', err);
-                  });
+                  console.log('Source video metadata loaded successfully from API');
+                  setSourceVideoDimensions({ width: videoElement.videoWidth, height: videoElement.videoHeight });
+                  console.log(`Source video dimensions (API): ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+                  videoElement.currentTime = lastVideoStateRef.current.time;
+                  if (lastVideoStateRef.current.playing) {
+                    videoElement.play().catch(e => console.error('Error playing video after state restore (API):', e));
+                    setIsPlaying(true);
+                  } else {
+                    setIsPlaying(false);
+                  }
                 };
                 
                 // Add error event listener to catch and log any errors
@@ -277,6 +281,15 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           // Add onloadedmetadata event listener to check if video loaded successfully
           videoElement.onloadedmetadata = () => {
             console.log('Source video metadata loaded successfully from public_url');
+            setSourceVideoDimensions({ width: videoElement.videoWidth, height: videoElement.videoHeight });
+            console.log(`Source video dimensions (public_url): ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+            videoElement.currentTime = lastVideoStateRef.current.time;
+            if (lastVideoStateRef.current.playing) {
+              videoElement.play().catch(e => console.error('Error playing video after state restore (public_url):', e));
+              setIsPlaying(true);
+            } else {
+              setIsPlaying(false);
+            }
           };
           
           // Add error event listener to catch and log any errors
@@ -305,6 +318,15 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
             // Add onloadedmetadata event listener to check if video loaded successfully
             videoElement.onloadedmetadata = () => {
               console.log('Source video metadata loaded successfully from storage path');
+              setSourceVideoDimensions({ width: videoElement.videoWidth, height: videoElement.videoHeight });
+              console.log(`Source video dimensions (storage path): ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+              videoElement.currentTime = lastVideoStateRef.current.time;
+              if (lastVideoStateRef.current.playing) {
+                videoElement.play().catch(e => console.error('Error playing video after state restore (storage path):', e));
+                setIsPlaying(true);
+              } else {
+                setIsPlaying(false);
+              }
             };
             
             // Add error event listener to catch and log any errors
@@ -336,13 +358,17 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           // Add onloadedmetadata event listener to check if fallback loaded successfully
           videoElement.onloadedmetadata = () => {
             console.log('Fallback video metadata loaded successfully');
+            setSourceVideoDimensions({ width: videoElement.videoWidth, height: videoElement.videoHeight }); // Still set dimensions for fallback
+            console.log(`Fallback video dimensions: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+            videoElement.currentTime = 0; // Start fallback from beginning
+            setIsPlaying(false);
           };
         }
       }
     };
 
     fetchSourceVideo();
-  }, [sourceVideoId]);
+  }, [sourceVideoId, viewMode]);
   
   // Handle recording start/stop
   const toggleRecording = () => {
@@ -353,6 +379,27 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
     }
   }
   
+  // Helper function to draw an image/video "contained" within a bounding box
+  const drawImageContain = (
+    ctx: CanvasRenderingContext2D,
+    img: HTMLVideoElement | HTMLImageElement,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ) => {
+    const iw = (img as HTMLVideoElement).videoWidth || img.width;
+    const ih = (img as HTMLVideoElement).videoHeight || img.height;
+    if (!iw || !ih) return; // Do not draw if image dimensions are not available
+
+    const r = Math.min(w / iw, h / ih);
+    const nw = iw * r;
+    const nh = ih * r;
+    const nx = x + (w - nw) / 2;
+    const ny = y + (h - nh) / 2;
+    ctx.drawImage(img, nx, ny, nw, nh);
+  };
+
   const startRecording = async () => {
     recordedChunksRef.current = []
     
@@ -362,7 +409,6 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
     }
     
     try {
-      // Create a canvas to combine both videos
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
@@ -371,10 +417,18 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
         return;
       }
       
-      // Set canvas dimensions based on the source video dimensions
-      // This ensures we have enough resolution for a good quality recording
-      canvas.width = viewMode === 'side-by-side' ? 1280 : 854;
-      canvas.height = viewMode === 'side-by-side' ? 480 : 480;
+      let canvasRenderWidth = 1280; // Default
+      let canvasRenderHeight = 720; // Default
+
+      if (sourceVideoDimensions) {
+        canvasRenderWidth = sourceVideoDimensions.width;
+        canvasRenderHeight = sourceVideoDimensions.height;
+        console.log(`Using source dimensions for canvas: ${canvasRenderWidth}x${canvasRenderHeight}`);
+      } else {
+        console.log(`Source dimensions unknown, using default canvas: ${canvasRenderWidth}x${canvasRenderHeight}`);
+      }
+      canvas.width = canvasRenderWidth;
+      canvas.height = canvasRenderHeight;
       
       // Start playing the source video
       if (sourceVideoRef.current) {
@@ -392,9 +446,11 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
       }
       
       // Create a new MediaRecorder instance with the canvas stream
+      const calculatedBitrate = Math.min(8000000, canvas.width * canvas.height * 2.5); // Cap at 8Mbps
+      console.log(`Recording with bitrate: ${calculatedBitrate / 1000000} Mbps`);
       const mediaRecorder = new MediaRecorder(canvasStream, {
         mimeType: 'video/webm;codecs=vp9,opus',
-        videoBitsPerSecond: 2500000 // 2.5 Mbps for good quality
+        videoBitsPerSecond: calculatedBitrate
       });
       
       mediaRecorderRef.current = mediaRecorder;
@@ -415,66 +471,60 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         // Log video state for debugging
-        console.log(`Source video state: readyState=${sourceVideoRef.current.readyState}, paused=${sourceVideoRef.current.paused}`);
+        // console.log(`Source video state: readyState=${sourceVideoRef.current.readyState}, paused=${sourceVideoRef.current.paused}`);
         
-        // Only try to draw if videos are ready
         const sourceReady = sourceVideoRef.current.readyState >= 2; // HAVE_CURRENT_DATA or higher
-        
-        if (viewMode === 'side-by-side') {
-          // Side by side mode: source video on the left, webcam on the right
-          if (sourceReady) {
-            ctx.drawImage(
-              sourceVideoRef.current,
-              0, 0, canvas.width * 0.66, canvas.height
-            );
-          } else {
-            // Display a loading message
-            ctx.fillStyle = '#333333';
-            ctx.fillRect(0, 0, canvas.width * 0.66, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Loading source video...', canvas.width * 0.33, canvas.height / 2);
-          }
-          
-          ctx.drawImage(
-            webcamRef.current,
-            canvas.width * 0.66, 0, canvas.width * 0.34, canvas.height
-          );
+        const webcamReady = webcamRef.current.readyState >= 2;
+        const isCanvasVertical = canvas.height > canvas.width;
+
+        if (viewMode === 'side-by-side' && !isCanvasVertical) {
+            // Standard Landscape Side-by-Side
+            if (sourceReady) {
+                drawImageContain(ctx, sourceVideoRef.current, 0, 0, canvas.width * 0.66, canvas.height);
+            } else {
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(0, 0, canvas.width * 0.66, canvas.height);
+                ctx.fillStyle = 'white'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('Loading source...', canvas.width * 0.33, canvas.height / 2);
+            }
+            if (webcamReady) {
+                drawImageContain(ctx, webcamRef.current, canvas.width * 0.66, 0, canvas.width * 0.34, canvas.height);
+            } else {
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(canvas.width * 0.66, 0, canvas.width * 0.34, canvas.height);
+                // Optionally, add a loading text for webcam too
+            }
         } else {
-          // Picture-in-picture mode
-          // Draw source video as background
-          if (sourceReady) {
-            ctx.drawImage(
-              sourceVideoRef.current,
-              0, 0, canvas.width, canvas.height
-            );
-          } else {
-            // Display a loading message
-            ctx.fillStyle = '#333333';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Loading source video...', canvas.width / 2, canvas.height / 2);
-          }
-          
-          // Calculate PiP size and position based on reactionSize and reactionPosition
-          const pipWidth = canvas.width * (reactionSize / 100);
-          const pipHeight = pipWidth * 0.75; // Maintain aspect ratio
-          const pipX = canvas.width - pipWidth - (canvas.width * (reactionPosition.x / 100));
-          const pipY = canvas.height * (reactionPosition.y / 100);
-          
-          // Draw webcam in PiP position
-          ctx.drawImage(
-            webcamRef.current,
-            pipX, pipY, pipWidth, pipHeight
-          );
-          
-          // Add a border around the PiP
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(pipX, pipY, pipWidth, pipHeight);
+            // This covers:
+            // 1. Picture-in-Picture mode (for both landscape and vertical canvas)
+            // 2. "Side-by-Side" mode when the canvas is vertical (treat as PiP on full source)
+            
+            // Draw source video to fill the canvas (maintaining aspect ratio)
+            if (sourceReady) {
+                drawImageContain(ctx, sourceVideoRef.current, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText('Loading source video...', canvas.width / 2, canvas.height / 2);
+            }
+
+            // Draw webcam as PiP
+            if (webcamReady) {
+                let pipWidth = canvas.width * (reactionSize / 100);
+                let pipHeight = (webcamRef.current.videoWidth > 0) ?
+                                pipWidth * (webcamRef.current.videoHeight / webcamRef.current.videoWidth) :
+                                pipWidth * 0.75; // Default to 4:3 aspect ratio
+
+                const pipX = canvas.width - pipWidth - (canvas.width * (reactionPosition.x / 100));
+                const pipY = canvas.height * (reactionPosition.y / 100);
+                
+                drawImageContain(ctx, webcamRef.current, pipX, pipY, pipWidth, pipHeight);
+                
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2; // Consider scaling lineWidth based on canvas size for HiDPI
+                ctx.strokeRect(pipX, pipY, pipWidth, pipHeight);
+            }
         }
         
         // Request the next frame when:
@@ -585,26 +635,17 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           <Button
             variant={viewMode === 'side-by-side' ? 'default' : 'outline'}
             onClick={() => {
-              console.log("Changing to side-by-side mode");
-              setViewMode('side-by-side');
-              // Reload and restart the video
-              if (sourceVideoRef.current) {
-                const currentTime = sourceVideoRef.current.currentTime;
-                const wasPlaying = !sourceVideoRef.current.paused;
-                
-                // Force reload by setting src to itself
-                const currentSrc = sourceVideoRef.current.src;
-                sourceVideoRef.current.src = currentSrc;
-                
-                sourceVideoRef.current.onloadedmetadata = () => {
-                  sourceVideoRef.current!.currentTime = currentTime;
-                  if (wasPlaying) {
-                    sourceVideoRef.current!.play().catch(e => console.error('Error playing video after mode switch:', e));
-                    setIsPlaying(true);
-                  }
-                  console.log("Video reloaded in side-by-side mode");
+              if (sourceVideoRef.current && sourceVideoRef.current.readyState > 0) {
+                lastVideoStateRef.current = {
+                  time: sourceVideoRef.current.currentTime,
+                  playing: !sourceVideoRef.current.paused,
                 };
+                console.log("Captured state before side-by-side:", lastVideoStateRef.current);
+              } else {
+                lastVideoStateRef.current = { time: 0, playing: false };
               }
+              setSourceVideoDimensions(null); // Reset dimensions on mode change
+              setViewMode('side-by-side');
             }}
             disabled={isRecording}
             className="flex-1"
@@ -615,26 +656,17 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           <Button
             variant={viewMode === 'picture-in-picture' ? 'default' : 'outline'}
             onClick={() => {
-              console.log("Changing to picture-in-picture mode");
-              setViewMode('picture-in-picture');
-              // Reload and restart the video
-              if (sourceVideoRef.current) {
-                const currentTime = sourceVideoRef.current.currentTime;
-                const wasPlaying = !sourceVideoRef.current.paused;
-                
-                // Force reload by setting src to itself
-                const currentSrc = sourceVideoRef.current.src;
-                sourceVideoRef.current.src = currentSrc;
-                
-                sourceVideoRef.current.onloadedmetadata = () => {
-                  sourceVideoRef.current!.currentTime = currentTime;
-                  if (wasPlaying) {
-                    sourceVideoRef.current!.play().catch(e => console.error('Error playing video after mode switch:', e));
-                    setIsPlaying(true);
-                  }
-                  console.log("Video reloaded in picture-in-picture mode");
+              if (sourceVideoRef.current && sourceVideoRef.current.readyState > 0) {
+                lastVideoStateRef.current = {
+                  time: sourceVideoRef.current.currentTime,
+                  playing: !sourceVideoRef.current.paused,
                 };
+                console.log("Captured state before picture-in-picture:", lastVideoStateRef.current);
+              } else {
+                lastVideoStateRef.current = { time: 0, playing: false };
               }
+              setSourceVideoDimensions(null); // Reset dimensions on mode change
+              setViewMode('picture-in-picture');
             }}
             disabled={isRecording}
             className="flex-1"
@@ -746,42 +778,6 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
                 {sourceVideoRef.current && !sourceVideoRef.current.paused ?
                   <Square className="h-4 w-4" /> :
                   <Play className="h-4 w-4" />}
-              </Button>
-            </div>
-            
-            {/* Refresh video button */}
-            <div className="absolute bottom-4 left-4 z-40">
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (sourceVideoRef.current) {
-                    const currentTime = sourceVideoRef.current.currentTime;
-                    const wasPlaying = !sourceVideoRef.current.paused;
-                    const currentSrc = sourceVideoRef.current.src.split('?')[0]; // Remove any query params
-                    
-                    console.log("Manually refreshing video, current src:", currentSrc);
-                    sourceVideoRef.current.src = "";
-                    setTimeout(() => {
-                      if (sourceVideoRef.current) {
-                        // Add cache buster
-                        const cacheBuster = `?t=${Date.now()}`;
-                        sourceVideoRef.current.src = currentSrc + cacheBuster;
-                        sourceVideoRef.current.onloadedmetadata = () => {
-                          if (sourceVideoRef.current) {
-                            sourceVideoRef.current.currentTime = currentTime;
-                            if (wasPlaying) {
-                              sourceVideoRef.current.play()
-                                .catch(e => console.error("Error playing after refresh:", e));
-                              setIsPlaying(true);
-                            }
-                          }
-                        };
-                      }
-                    }, 100);
-                  }
-                }}
-              >
-                Refresh Video
               </Button>
             </div>
             
@@ -964,6 +960,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
             size="lg"
             variant={isRecording ? "destructive" : "default"}
             onClick={toggleRecording}
+            disabled={!isRecording && !sourceVideoDimensions} // Disable if not recording AND dimensions are unknown
           >
             {isRecording ? (
               <>
