@@ -106,6 +106,7 @@ export async function POST(request: Request) {
       duration: 0,
       availability: true
     };
+    let thumbnailUrl: string | null = null; // Declare thumbnailUrl in the outer scope
     
     try {
       // Create temporary ytDlp instance to check video info
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
           videoInfo.title = info.title || '';
           videoInfo.platform = info.extractor || '';
           videoInfo.duration = info.duration || 0;
-          const thumbnailUrl = info.thumbnail || null; // Extract thumbnail URL
+          thumbnailUrl = info.thumbnail || null; // Assign to the outer scope thumbnailUrl
           
           // If duration is too long (over 10 minutes), add a warning
           if (videoInfo.duration > 600) {
@@ -169,7 +170,7 @@ export async function POST(request: Request) {
     }
     
     // Start the download process asynchronously
-    downloadVideo(url, userId, sourceVideo.id, fileName).catch(error => {
+    downloadVideo(url, userId, sourceVideo.id, fileName, thumbnailUrl).catch(error => { // Pass thumbnailUrl
       console.error(`Error in background download process for ${url}:`, error);
       // Background process will update the database with the error status
     });
@@ -270,12 +271,20 @@ export async function GET(request: Request) {
 }
 
 /**
- * Downloads a video using yt-dlp and uploads it to Supabase Storage
+ * Downloads a video using yt-dlp and uploads it to Supabase Storage.
+ * Also downloads and uploads the video thumbnail if available.
  */
-async function downloadVideo(url: string, userId: string, sourceId: string, fileName: string) {
-  // Log download start time for performance tracking
-  const startTime = Date.now();
-  console.log(`[${sourceId}] Starting download process for ${url}`);
+async function downloadVideo(
+ url: string,
+ userId: string,
+ sourceId: string,
+ fileName: string,
+ originalThumbnailUrl: string | null // Added parameter for original thumbnail URL
+) {
+ // Log download start time for performance tracking
+ const startTime = Date.now();
+ console.log(`[${sourceId}] Starting download process for ${url}`);
+ let hostedThumbnailUrl: string | null = null; // To store the URL of our hosted thumbnail
   
   // Create a temporary directory for the download
   const tempDir = path.join(os.tmpdir(), `reactshare-${uuidv4()}`);
@@ -407,6 +416,66 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
     
     // Update status to uploading
     await updateSourceVideoStatus(sourceId, 'uploading');
+
+    // Download and upload thumbnail if originalThumbnailUrl is available
+    if (originalThumbnailUrl) {
+      try {
+        console.log(`[${sourceId}] Attempting to download thumbnail from: ${originalThumbnailUrl}`);
+        const response = await fetch(originalThumbnailUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch thumbnail: ${response.statusText}`);
+        }
+        const thumbnailBuffer = Buffer.from(await response.arrayBuffer());
+        
+        // Determine thumbnail extension
+        const contentType = response.headers.get('content-type');
+        let thumbnailExtension = '.jpg'; // Default extension
+        if (contentType) {
+          if (contentType.includes('jpeg')) thumbnailExtension = '.jpg';
+          else if (contentType.includes('png')) thumbnailExtension = '.png';
+          else if (contentType.includes('webp')) thumbnailExtension = '.webp';
+          // Add more types if needed
+        } else {
+          // Try to infer from URL
+          const urlPath = new URL(originalThumbnailUrl).pathname;
+          const extMatch = urlPath.match(/\.(jpg|jpeg|png|webp|gif)$/i);
+          if (extMatch && extMatch[1]) {
+            thumbnailExtension = `.${extMatch[1].toLowerCase()}`;
+          }
+        }
+
+        const thumbnailFileName = `${path.parse(fileName).name}_thumb${thumbnailExtension}`;
+        const thumbnailStoragePath = `${userId}/thumbnails/${thumbnailFileName}`; // Store in a subfolder
+
+        console.log(`[${sourceId}] Uploading thumbnail to: ${thumbnailStoragePath}`);
+        const { data: thumbUploadData, error: thumbUploadError } = await supabaseAdmin.storage
+          .from(BUCKET_NAME)
+          .upload(thumbnailStoragePath, thumbnailBuffer, {
+            contentType: contentType || 'image/jpeg',
+            cacheControl: '3600',
+            upsert: true,
+          });
+
+        if (thumbUploadError) {
+          throw new Error(`Supabase thumbnail upload failed: ${thumbUploadError.message}`);
+        }
+
+        const { data: publicThumbUrlData } = supabaseAdmin.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(thumbnailStoragePath);
+        
+        if (publicThumbUrlData?.publicUrl) {
+          hostedThumbnailUrl = publicThumbUrlData.publicUrl;
+          console.log(`[${sourceId}] Thumbnail uploaded successfully: ${hostedThumbnailUrl}`);
+        } else {
+           console.warn(`[${sourceId}] Could not get public URL for uploaded thumbnail.`);
+        }
+
+      } catch (thumbError: any) {
+        console.warn(`[${sourceId}] Failed to download or upload thumbnail: ${thumbError.message}`);
+        // Non-fatal, continue with video processing. The original thumbnail_url (if any) will remain.
+      }
+    }
     
     // Ensure the bucket exists
     const { error: bucketError } = await ensureBucketExists(BUCKET_NAME);
@@ -443,11 +512,13 @@ async function downloadVideo(url: string, userId: string, sourceId: string, file
     await updateSourceVideoStatus(
       sourceId,
       'completed',
-      null,
-      publicUrlData?.publicUrl,
+      null, // Error message
+      publicUrlData?.publicUrl, // Video public URL
       {
         processing_time_seconds: durationSeconds,
-        completed_at: new Date().toISOString()
+        completed_at: new Date().toISOString(),
+        // Update thumbnail_url only if we successfully hosted our own
+        ...(hostedThumbnailUrl && { thumbnail_url: hostedThumbnailUrl }),
       }
     );
     
@@ -506,16 +577,14 @@ async function updateSourceVideoStatus(
     
     // Add any additional data fields if provided
     if (additionalData && typeof additionalData === 'object') {
-      const { completed_at, processing_time_seconds, ...restOfAdditionalData } = additionalData; // Destructure further
-      if (Object.keys(restOfAdditionalData).length > 0) {
-        Object.assign(updateData, restOfAdditionalData);
-      }
-      if (completed_at) {
-        console.log(`[${sourceId}] Note: 'completed_at' field was provided for source_videos but is being ignored due to schema mismatch.`);
-      }
-      if (processing_time_seconds) {
-        console.log(`[${sourceId}] Note: 'processing_time_seconds' field was provided for source_videos but is being ignored due to schema mismatch.`);
-      }
+      // Directly assign all properties from additionalData to updateData
+      // This includes completed_at, processing_time_seconds, and thumbnail_url (if present)
+      Object.assign(updateData, additionalData);
+      
+      // The previous console logs about ignoring fields were misleading due to the destructuring logic.
+      // With Object.assign(updateData, additionalData), all fields from additionalData
+      // (including completed_at, processing_time_seconds, and potentially thumbnail_url)
+      // will be correctly added to the updateData object.
     }
     
     const { error } = await supabaseAdmin
