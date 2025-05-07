@@ -1,8 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
-import { DashboardNav } from "@/components/dashboard/dashboard-nav"
+// DashboardHeader and DashboardNav are provided by the layout
 import { OverviewMetrics } from "@/components/analytics/overview-metrics"
 import { PerformanceChart } from "@/components/analytics/performance-chart"
 import { PlatformBreakdown } from "@/components/analytics/platform-breakdown"
@@ -12,16 +11,17 @@ import { Download, Calendar } from "lucide-react"
 
 export default function AnalyticsPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <DashboardHeader />
-      <div className="container flex-1 items-start md:grid md:grid-cols-[220px_1fr] md:gap-6 lg:grid-cols-[240px_1fr] lg:gap-10">
-        <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100vh-3.5rem)] w-full shrink-0 md:sticky md:block">
-          <DashboardNav />
-        </aside>
-        <main className="flex w-full flex-col overflow-hidden">
-          <div className="flex flex-col items-start justify-between gap-4 py-6 sm:flex-row sm:items-center">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+    // The main div and header/nav structure are provided by DashboardLayout
+    // We only need to render the content specific to the analytics page here
+    <div className="flex w-full flex-col overflow-hidden">
+      {/* The outer container with grid for nav is in DashboardLayout */}
+      {/* The aside for DashboardNav is in DashboardLayout */}
+      {/* The main tag is also in DashboardLayout, this div becomes its direct child */}
+      
+      {/* Page-specific header/title section */}
+      <div className="flex flex-col items-start justify-between gap-4 py-6 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
               <p className="text-muted-foreground">Track performance across all your platforms</p>
             </div>
             <div className="flex gap-2">
@@ -149,8 +149,6 @@ export default function AnalyticsPage() {
               </Card>
             </TabsContent>
           </Tabs>
-        </main>
-      </div>
     </div>
   )
 }
