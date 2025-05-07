@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import useSocialAccounts from "@/hooks/use-social-accounts"
 import useSocialShares from "@/hooks/use-social-shares"
 import useYouTubePlaylists from "@/hooks/use-youtube-playlists"
+import useYouTubeAccount from "@/hooks/use-youtube-account"
 import { toast } from "@/components/ui/use-toast"
 
 interface PublishOptionsProps {
@@ -35,11 +36,13 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   const [isPublishing, setIsPublishing] = useState(false)
   const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>('private')
   const [selectedPlaylist, setSelectedPlaylist] = useState<string>("")
+  const [youtubeUploadStatus, setYoutubeUploadStatus] = useState<string>("")
   
   // Get social account and share data/functions
   const { accounts } = useSocialAccounts();
-  const { uploadToYouTube, scheduleShare } = useSocialShares();
+  const { scheduleShare } = useSocialShares();
   const { playlists, loadPlaylists } = useYouTubePlaylists();
+  const { uploadVideo: uploadToYouTube } = useYouTubeAccount();
   
   // Check for connected accounts
   const [availablePlatforms, setAvailablePlatforms] = useState<string[]>([]);
@@ -135,6 +138,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0)
     
+    setYoutubeUploadStatus("Preparing video for upload...")
+    
     const result = await uploadToYouTube({
       reactionId,
       title,
@@ -144,10 +149,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       playlistId: selectedPlaylist || undefined
     })
     
-    if (!result) {
-      throw new Error("Failed to upload to YouTube")
+    if (!result || !result.success) {
+      setYoutubeUploadStatus("")
+      throw new Error(result?.error || "Failed to upload to YouTube")
     }
     
+    setYoutubeUploadStatus("")
     return result
   }
   
@@ -279,28 +286,45 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
               </Select>
             </div>
             
-            {/* YouTube Playlist Selection - Only show when YouTube is selected */}
+            {/* YouTube Settings - Only show when YouTube is selected */}
             {selectedPlatforms.includes('youtube') && (
-              <div className="space-y-2 mt-4">
-                <label htmlFor="youtubePlaylist" className="text-sm font-medium">
-                  YouTube Playlist
-                </label>
-                <Select
-                  value={selectedPlaylist}
-                  onValueChange={setSelectedPlaylist}
-                >
-                  <SelectTrigger id="youtubePlaylist" className="w-full">
-                    <SelectValue placeholder="Add to playlist (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">None (Don't add to playlist)</SelectItem>
-                    {playlists.map(playlist => (
-                      <SelectItem key={playlist.id} value={playlist.id}>
-                        {playlist.title} ({playlist.itemCount} videos)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-4 mt-4 p-4 border rounded-md bg-red-50/30">
+                <div className="flex items-center gap-2">
+                  <Youtube className="h-5 w-5 text-red-600" />
+                  <h4 className="font-medium">YouTube Upload Settings</h4>
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="youtubePlaylist" className="text-sm font-medium">
+                    Add to YouTube Playlist
+                  </label>
+                  <Select
+                    value={selectedPlaylist}
+                    onValueChange={setSelectedPlaylist}
+                  >
+                    <SelectTrigger id="youtubePlaylist" className="w-full">
+                      <SelectValue placeholder="Add to playlist (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None (Don't add to playlist)</SelectItem>
+                      {playlists.map(playlist => (
+                        <SelectItem key={playlist.id} value={playlist.id}>
+                          {playlist.title} ({playlist.itemCount} videos)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The video will be added to the selected playlist after upload.
+                  </p>
+                </div>
+                
+                {youtubeUploadStatus && (
+                  <div className="flex items-center gap-2 text-sm mt-2 text-blue-700">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>{youtubeUploadStatus}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -328,7 +352,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
                     onCheckedChange={() => togglePlatform(platform.id)}
                   />
                   <div className="flex flex-1 items-center space-x-2">
-                    <Icon className={`h-5 w-5 ${platform.color}`} />
+                    <Icon className={`h-5 w-5 ${platform.color}`} strokeWidth={platform.id === 'youtube' ? 2 : 1.5} />
                     <label htmlFor={platform.id} className="flex-1 text-sm font-medium cursor-pointer">
                       {platform.name}
                     </label>
@@ -417,8 +441,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           <Alert className="bg-green-50 border-green-200 mt-4">
             <Check className="h-4 w-4 text-green-500" />
             <AlertDescription className="text-green-700">
-              {selectedPlatforms.length > 0 
-                ? `Your reaction video has been scheduled for publishing to ${selectedPlatforms.length} platform(s).`
+              {selectedPlatforms.length > 0
+                ? `Your reaction video has been ${selectedPlatforms.includes('youtube') ? 'published to YouTube' : 'scheduled for publishing'} to ${selectedPlatforms.length} platform(s).`
                 : "Your reaction video has been saved without publishing."}
             </AlertDescription>
           </Alert>

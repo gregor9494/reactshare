@@ -10,7 +10,10 @@ import { ConnectedAccounts } from "@/components/social/connected-accounts";
 import { AccountActivity } from "@/components/social/account-activity";
 import { YouTubeAnalytics } from "@/components/social/youtube-analytics";
 import { YouTubePlaylists } from "@/components/social/youtube-playlists";
-import TikTokAnalytics from "@/components/social/tiktok-analytics";
+// TikTokAnalytics is imported but used conditionally or within TikTokIntegration
+// import TikTokAnalytics from "@/components/social/tiktok-analytics"; 
+import { YouTubeIntegration } from "@/components/social/youtube-integration";
+import { TikTokIntegration } from "@/components/social/tiktok-integration";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import useSocialAccounts from "@/hooks/use-social-accounts";
 
@@ -44,7 +47,7 @@ export default function SocialPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 pb-16">
+    <div className="space-y-6 py-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Social Accounts</h2>
         <p className="text-muted-foreground">
@@ -53,24 +56,13 @@ export default function SocialPage() {
       </div>
       
       <Tabs defaultValue="accounts" className="w-full" onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 max-w-xl"> {/* Adjusted grid columns */}
           <TabsTrigger value="accounts">Connected Accounts</TabsTrigger>
           <TabsTrigger value="activity">Account Activity</TabsTrigger>
           <TabsTrigger value="youtube" disabled={!hasYouTubeAccount} className="relative">
             <div className="flex items-center gap-1">
               <Youtube className="h-4 w-4" />
-              <span>Analytics</span>
-              {!hasYouTubeAccount && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-sm text-xs">
-                  Connect first
-                </div>
-              )}
-            </div>
-          </TabsTrigger>
-          <TabsTrigger value="playlists" disabled={!hasYouTubeAccount} className="relative">
-            <div className="flex items-center gap-1">
-              <Youtube className="h-4 w-4" />
-              <span>Playlists</span>
+              <span>YouTube</span>
               {!hasYouTubeAccount && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-sm text-xs">
                   Connect first
@@ -112,102 +104,106 @@ export default function SocialPage() {
         </TabsContent>
         
         <TabsContent value="youtube" className="mt-6">
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold flex items-center gap-2">
-              <Youtube className="h-5 w-5 text-red-600" />
-              YouTube Analytics
-            </h3>
-            <p className="text-muted-foreground">
-              Monitor your YouTube channel performance and video analytics.
-            </p>
-            {hasYouTubeAccount ? (
-              <YouTubeAnalytics />
-            ) : (
-              <div className="text-center py-10 border rounded-md bg-muted/10">
-                <p className="text-muted-foreground mb-4">
-                  Connect your YouTube account to see analytics
-                </p>
-                <button
-                  className="bg-red-600 text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
-                  onClick={() => setActiveTab("accounts")}
-                >
-                  <Youtube className="h-4 w-4" />
-                  Connect YouTube
-                </button>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="playlists" className="mt-6">
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold flex items-center gap-2">
-              <Youtube className="h-5 w-5 text-red-600" />
-              YouTube Playlists
-            </h3>
-            <p className="text-muted-foreground">
-              Create and manage YouTube playlists for your reaction videos.
-            </p>
-            {hasYouTubeAccount ? (
-              <YouTubePlaylists />
-            ) : (
-              <div className="text-center py-10 border rounded-md bg-muted/10">
-                <p className="text-muted-foreground mb-4">
-                  Connect your YouTube account to manage playlists
-                </p>
-                <button
-                  className="bg-red-600 text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
-                  onClick={() => setActiveTab("accounts")}
-                >
-                  <Youtube className="h-4 w-4" />
-                  Connect YouTube
-                </button>
-              </div>
-            )}
-          </div>
+          {hasYouTubeAccount ? (
+            <Tabs defaultValue="youtube-channel" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 max-w-lg mb-4">
+                <TabsTrigger value="youtube-channel">Channel</TabsTrigger>
+                <TabsTrigger value="youtube-analytics">Analytics</TabsTrigger>
+                <TabsTrigger value="youtube-playlists">Playlists</TabsTrigger>
+              </TabsList>
+              <TabsContent value="youtube-channel">
+                <YouTubeIntegration />
+              </TabsContent>
+              <TabsContent value="youtube-analytics">
+                <div className="space-y-4">
+                  <h3 className="text-xl font-semibold flex items-center gap-2">
+                    <Youtube className="h-5 w-5 text-red-600" />
+                    YouTube Analytics
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Monitor your YouTube channel performance and video analytics.
+                  </p>
+                  <YouTubeAnalytics />
+                </div>
+              </TabsContent>
+              <TabsContent value="youtube-playlists">
+                <div className="space-y-4">
+                  <h3 className="text-xl font-semibold flex items-center gap-2">
+                    <Youtube className="h-5 w-5 text-red-600" />
+                    YouTube Playlists
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Create and manage YouTube playlists for your reaction videos.
+                  </p>
+                  <YouTubePlaylists />
+                </div>
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <div className="text-center py-10 border rounded-md bg-muted/10">
+              <p className="text-muted-foreground mb-4">
+                Connect your YouTube account to manage your channel, view analytics, and playlists.
+              </p>
+              <button
+                className="bg-red-600 text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
+                onClick={() => setActiveTab("accounts")}
+              >
+                <Youtube className="h-4 w-4" />
+                Connect YouTube
+              </button>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="tiktok" className="mt-6">
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold flex items-center gap-2">
-              <TikTokIcon className="h-5 w-5" />
-              TikTok Analytics
-            </h3>
-            <p className="text-muted-foreground">
-              Monitor your TikTok videos performance and account growth.
-            </p>
-            {hasTikTokAccount ? (
-              <div className="grid gap-4">
-                {/* We need to render TikTokAnalytics per share, as it's designed for individual shares */}
-                {/* This is a placeholder until we fetch actual TikTok shares */}
-                <div className="text-center py-10 border rounded-md bg-muted/10">
-                  <p className="text-muted-foreground mb-4">
-                    Select a video from the Account Activity tab to view its detailed analytics
+          {hasTikTokAccount ? (
+            <Tabs defaultValue="tiktok-channel" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 max-w-sm mb-4">
+                <TabsTrigger value="tiktok-channel">Account</TabsTrigger>
+                <TabsTrigger value="tiktok-analytics">Analytics</TabsTrigger>
+              </TabsList>
+              <TabsContent value="tiktok-channel">
+                <TikTokIntegration />
+              </TabsContent>
+              <TabsContent value="tiktok-analytics">
+                <div className="space-y-4">
+                  <h3 className="text-xl font-semibold flex items-center gap-2">
+                    <TikTokIcon className="h-5 w-5" />
+                    TikTok Analytics
+                  </h3>
+                  <p className="text-muted-foreground">
+                    Monitor your TikTok videos performance and account growth.
                   </p>
-                  <button
-                    className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
-                    onClick={() => setActiveTab("activity")}
-                  >
-                    <TikTokIcon className="h-4 w-4" />
-                    View Account Activity
-                  </button>
+                  {/* TikTokAnalytics is designed for individual shares, so show a placeholder or guide */}
+                  <div className="text-center py-10 border rounded-md bg-muted/10">
+                    <p className="text-muted-foreground mb-4">
+                      Select a specific post from the "Account Activity" tab to view its detailed analytics.
+                    </p>
+                    <button
+                      className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
+                      onClick={() => setActiveTab("activity")}
+                    >
+                      <TikTokIcon className="h-4 w-4" />
+                      View Account Activity
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-10 border rounded-md bg-muted/10">
-                <p className="text-muted-foreground mb-4">
-                  Connect your TikTok account to see analytics
-                </p>
-                <button
-                  className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
-                  onClick={() => setActiveTab("accounts")}
-                >
-                  <TikTokIcon className="h-4 w-4" />
-                  Connect TikTok
-                </button>
-              </div>
-            )}
-          </div>
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <div className="text-center py-10 border rounded-md bg-muted/10">
+              <p className="text-muted-foreground mb-4">
+                Connect your TikTok account to manage your profile and view analytics.
+              </p>
+              <button
+                className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
+                onClick={() => setActiveTab("accounts")}
+              >
+                <TikTokIcon className="h-4 w-4" />
+                Connect TikTok
+              </button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

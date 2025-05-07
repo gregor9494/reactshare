@@ -126,64 +126,59 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="container flex-1 items-start md:grid md:grid-cols-[220px_1fr] md:gap-6 lg:grid-cols-[240px_1fr] lg:gap-10">
-        <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100vh-3.5rem)] w-full shrink-0 md:sticky md:block">
-          <DashboardNav />
-        </aside>
-        <main className="flex w-full flex-col overflow-hidden">
-          <div className="flex flex-col gap-4 py-6 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Video Library</h1>
-              <p className="text-muted-foreground">Manage, download, and organize your source videos.</p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/dashboard/create">
-                <Button>Create Reaction</Button>
-              </Link>
-            </div>
-          </div>
-
-          <div className="mb-6 flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm sm:flex-row sm:items-end">
-            <div className="flex-grow">
-                <label htmlFor="videoUrl" className="mb-1 block text-sm font-medium text-foreground">
-                    Download Video from URL
-                </label>
-                <Input
-                    id="videoUrl"
-                    type="url"
-                    placeholder="Enter video URL (e.g., YouTube, TikTok, Twitter)"
-                    value={videoUrl}
-                    onChange={(e) => setVideoUrl(e.target.value)}
-                    className="w-full"
-                    disabled={isDownloading}
-                />
-            </div>
-            <Button
-                onClick={handleDownloadVideo}
-                disabled={isDownloading || !videoUrl.trim()}
-                className="w-full sm:w-auto"
-            >
-                {isDownloading ? (
-                    'Downloading...'
-                ) : (
-                    typeof Download !== 'undefined' ? <Download className="mr-2 h-4 w-4" /> : null
-                )}
-                {isDownloading ? null : 'Download Video'}
-            </Button>
-          </div>
-
-          {isLoadingVideos && sourceVideos.length === 0 ? (
-             <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-12 text-center">
-                {/* Loader icon removed */}
-                <p className="text-md font-semibold text-muted-foreground">Loading videos...</p>
-                <p className="mt-2 text-sm text-muted-foreground">Please wait while your video library is being loaded.</p>
-            </div>
-          ) : (
-            <VideoGrid videos={sourceVideos} />
-          )}
-        </main>
+    // The main layout app/dashboard/layout.tsx already provides the overall structure including DashboardNav
+    // So, this page should only return the content for the <main> section
+    <>
+      <div className="flex flex-col gap-4 py-6 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Video Library</h1>
+          <p className="text-muted-foreground">Manage, download, and organize your source videos.</p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/dashboard/create">
+            <Button>Create Reaction</Button>
+          </Link>
+        </div>
       </div>
-    </div>
+
+      <div className="mb-6 flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm sm:flex-row sm:items-end">
+        <div className="flex-grow">
+            <label htmlFor="videoUrl" className="mb-1 block text-sm font-medium text-foreground">
+                Download Video from URL
+            </label>
+            <Input
+                id="videoUrl"
+                type="url"
+                placeholder="Enter video URL (e.g., YouTube, TikTok, Twitter)"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                className="w-full"
+                disabled={isDownloading}
+            />
+        </div>
+        <Button
+            onClick={handleDownloadVideo}
+            disabled={isDownloading || !videoUrl.trim()}
+            className="w-full sm:w-auto"
+        >
+            {isDownloading ? (
+                'Downloading...'
+            ) : (
+                typeof Download !== 'undefined' ? <Download className="mr-2 h-4 w-4" /> : null
+            )}
+            {isDownloading ? null : 'Download Video'}
+        </Button>
+      </div>
+
+      {isLoadingVideos && sourceVideos.length === 0 ? (
+         <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-12 text-center">
+            {/* Loader icon removed */}
+            <p className="text-md font-semibold text-muted-foreground">Loading videos...</p>
+            <p className="mt-2 text-sm text-muted-foreground">Please wait while your video library is being loaded.</p>
+        </div>
+      ) : (
+        <VideoGrid videos={sourceVideos} />
+      )}
+    </>
   );
 }

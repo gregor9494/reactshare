@@ -72,108 +72,99 @@ export default async function DashboardPage() { // Make the component async
 
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* Pass session to header if needed */}
-      <DashboardHeader session={session} />
-      <div className="container flex-1 items-start md:grid md:grid-cols-[220px_1fr] md:gap-6 lg:grid-cols-[240px_1fr] lg:gap-10">
-        <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100vh-3.5rem)] w-full shrink-0 md:sticky md:block">
-          <DashboardNav />
-        </aside>
-        <main className="flex w-full flex-col overflow-hidden">
-          <div className="flex items-center justify-between py-6">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-              {/* Personalized welcome message */}
-              <p className="text-muted-foreground">Welcome back, {userEmail}! Here's an overview.</p>
-            </div>
-            <Link href="/dashboard/create">
-              <Button>Create New Reaction</Button>
-            </Link>
-          </div>
-          {/* Placeholder cards - replace with dynamic data or remove */}
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Total Reactions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/* Display actual count */}
-                <div className="text-2xl font-bold">{reactions.length}</div>
-                <p className="text-xs text-muted-foreground">Based on your reactions</p> {/* Updated description */}
-              </CardContent>
-            </Card>
-            {/* Remove or update other static cards as needed */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Total Views</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-                <p className="text-xs text-muted-foreground">Views not tracked in MVP</p> {/* Updated description */}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Engagement Rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-                <p className="text-xs text-muted-foreground">Engagement not tracked in MVP</p> {/* Updated description */}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Scheduled Posts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-                <p className="text-xs text-muted-foreground">Scheduling not in MVP</p> {/* Updated description */}
-              </CardContent>
-            </Card>
-          </div>
-          <div className="grid gap-6 pt-6 md:grid-cols-2 lg:grid-cols-7">
-            <Card className="col-span-4">
-              <CardHeader>
-                <CardTitle>Recent Reactions</CardTitle>
-                <CardDescription>Your latest reaction videos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {/* Pass fetched reactions to RecentReactions */}
-                <RecentReactions reactions={reactions} />
-              </CardContent>
-            </Card>
-            {/* Remove or update other components as needed */}
-            <Card className="col-span-3">
-              <CardHeader>
-                <CardTitle>Analytics Summary</CardTitle>
-                <CardDescription>Your content performance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AnalyticsSummary /> {/* Keep placeholder for now */}
-              </CardContent>
-            </Card>
-            <Card className="col-span-4">
-              <CardHeader>
-                <CardTitle>Scheduled Posts</CardTitle>
-                <CardDescription>Upcoming content releases</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScheduledPosts /> {/* Keep placeholder for now */}
-              </CardContent>
-            </Card>
-            <Card className="col-span-3">
-              <CardHeader>
-                <CardTitle>Storage Usage</CardTitle>
-                <CardDescription>Your cloud storage allocation</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <StorageUsage /> {/* Keep placeholder for now */}
-              </CardContent>
-            </Card>
-          </div>
-        </main>
+    <>
+      <div className="flex items-center justify-between py-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          {/* Personalized welcome message */}
+          <p className="text-muted-foreground">Welcome back, {userEmail}! Here's an overview.</p>
+        </div>
+        <Link href="/dashboard/create">
+          <Button>Create New Reaction</Button>
+        </Link>
       </div>
-    </div>
+      {/* Placeholder cards - replace with dynamic data or remove */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Total Reactions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Display actual count */}
+            <div className="text-2xl font-bold">{reactions.length}</div>
+            <p className="text-xs text-muted-foreground">Based on your reactions</p> {/* Updated description */}
+          </CardContent>
+        </Card>
+        {/* Remove or update other static cards as needed */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Total Views</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+            <p className="text-xs text-muted-foreground">Views not tracked in MVP</p> {/* Updated description */}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Engagement Rate</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+            <p className="text-xs text-muted-foreground">Engagement not tracked in MVP</p> {/* Updated description */}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Scheduled Posts</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
+            <p className="text-xs text-muted-foreground">Scheduling not in MVP</p> {/* Updated description */}
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid gap-6 pt-6 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="col-span-4">
+          <CardHeader>
+            <CardTitle>Recent Reactions</CardTitle>
+            <CardDescription>Your latest reaction videos</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Pass fetched reactions to RecentReactions */}
+            <RecentReactions reactions={reactions} />
+          </CardContent>
+        </Card>
+        {/* Remove or update other components as needed */}
+        <Card className="col-span-3">
+          <CardHeader>
+            <CardTitle>Analytics Summary</CardTitle>
+            <CardDescription>Your content performance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AnalyticsSummary /> {/* Keep placeholder for now */}
+          </CardContent>
+        </Card>
+        <Card className="col-span-4">
+          <CardHeader>
+            <CardTitle>Scheduled Posts</CardTitle>
+            <CardDescription>Upcoming content releases</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScheduledPosts /> {/* Keep placeholder for now */}
+          </CardContent>
+        </Card>
+        <Card className="col-span-3">
+          <CardHeader>
+            <CardTitle>Storage Usage</CardTitle>
+            <CardDescription>Your cloud storage allocation</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <StorageUsage /> {/* Keep placeholder for now */}
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }
 
