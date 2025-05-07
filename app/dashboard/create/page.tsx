@@ -19,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideoRecorder } from "@/components/create/video-recorder";
 import { VideoEditor } from "@/components/create/video-editor";
 import { PublishOptions } from "@/components/create/publish-options";
+import { SourceVideoGrid } from '@/components/create/source-video-grid'; // Added
+import { SourceVideo } from '@/lib/types'; // Added
 
 // Define Zod schema for the source URL form
 const sourceUrlSchema = z.object({
@@ -46,10 +48,13 @@ export default function CreatePage() {
   const [currentStep, setCurrentStep] = useState<Step>('source');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
-  const [sourceVideoId, setSourceVideoId] = useState<string | null>(null);
-  const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
+  const [sourceVideoId, setSourceVideoId] = useState<string | null>(null); // Can be from download or library selection
+  const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null); // Original URL of the source video
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [reactionId, setReactionId] = useState<string | null>(null);
+  const [sourceSelectionTab, setSourceSelectionTab] = useState<'url' | 'library'>('url'); // Added
+  const [libraryVideos, setLibraryVideos] = useState<SourceVideo[]>([]); // Added
+  const [selectedLibraryVideoId, setSelectedLibraryVideoId] = useState<string | null>(null); // Added
 
   // Form for the source URL input
   const sourceForm = useForm<SourceUrlFormValues>({
@@ -59,10 +64,39 @@ export default function CreatePage() {
     },
   });
 
+  // Fetch library videos
+  useEffect(() => {
+    const fetchLibraryVideos = async () => {
+      if (sourceSelectionTab === 'library') {
+        setIsLoading(true);
+        setMessage(null);
+        try {
+          const response = await fetch('/api/videos/library');
+          if (!response.ok) {
+            const errorResult = await response.json();
+            setMessage({ type: 'error', text: errorResult.error || 'Failed to fetch library videos.' });
+            setIsLoading(false);
+            return;
+          }
+          const videos: SourceVideo[] = await response.json();
+          setLibraryVideos(videos.filter(v => v.status === 'completed' && v.storage_path)); // Only show completed and available videos
+          setIsLoading(false);
+        } catch (err) {
+          console.error("Fetch library videos error:", err);
+          setMessage({ type: 'error', text: 'An unexpected error occurred while fetching library videos.' });
+          setIsLoading(false);
+        }
+      }
+    };
+    fetchLibraryVideos();
+  }, [sourceSelectionTab]);
+
+
   // Handle source URL submission
-  const onSourceSubmit = async (values: SourceUrlFormValues) => {
+  const onSourceUrlSubmit = async (values: SourceUrlFormValues) => {
     setIsLoading(true);
     setMessage(null);
+    setSelectedLibraryVideoId(null); // Clear library selection
 
     try {
       // Call the video download API
@@ -82,8 +116,8 @@ export default function CreatePage() {
       }
 
       const downloadResult = await downloadResponse.json();
-      setSourceVideoId(downloadResult.id);
-      setSourceVideoUrl(values.sourceUrl);
+      setSourceVideoId(downloadResult.id); // This is the ID from the 'source_videos' table
+      setSourceVideoUrl(values.sourceUrl); // This is the original URL submitted by the user
       
       // Start polling for download status
       await pollDownloadStatus(downloadResult.id);
@@ -93,6 +127,29 @@ export default function CreatePage() {
       setMessage({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
       setIsLoading(false);
     }
+  };
+
+  // Handle library video selection
+  const handleLibraryVideoSelect = (video: SourceVideo) => {
+    setMessage(null);
+    setSourceVideoId(video.id); // This is the ID from the 'source_videos' table
+    setSourceVideoUrl(video.original_url); // Use the original URL from the selected library video
+    setSelectedLibraryVideoId(video.id);
+    sourceForm.reset({ sourceUrl: "" }); // Clear URL input if library video is selected
+    console.log(`Selected library video: ID=${video.id}, URL=${video.original_url}`);
+  };
+
+  // Proceed to recording step
+  const proceedToRecording = () => {
+    if (!sourceVideoId || !sourceVideoUrl) {
+      setMessage({ type: 'error', text: 'Please select or download a source video first.' });
+      return;
+    }
+    // If a library video was selected, its status is already 'completed'.
+    // If a URL was submitted, pollDownloadStatus would have moved to 'record' on completion.
+    // So, we can directly move to 'record' if sourceVideoId and sourceVideoUrl are set.
+    setCurrentStep('record');
+    setMessage(null); // Clear any previous messages
   };
 
   // Handle recording completion
@@ -387,47 +444,88 @@ export default function CreatePage() {
           
           {/* Step 1: Source Selection */}
           {currentStep === 'source' && (
-            <Card className="border-none shadow-none">
-              <CardHeader className="px-0 pt-0">
-                <CardTitle className="text-2xl">Select Source Video</CardTitle>
-                <CardDescription>Enter the URL of the video you want to react to</CardDescription>
-              </CardHeader>
-              <Form {...sourceForm}>
-                <form onSubmit={sourceForm.handleSubmit(onSourceSubmit)}>
-                  <CardContent className="space-y-6 px-0">
-                    <FormField
-                      control={sourceForm.control}
-                      name="sourceUrl"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Source Video URL</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Paste YouTube, TikTok, or Twitter URL"
-                              {...field}
-                              disabled={isLoading}
-                              className="max-w-xl"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {isLoading && (
-                      <div className="space-y-2 max-w-xl">
-                        <p className="text-sm text-muted-foreground">Downloading video... This may take a moment.</p>
-                        <Progress value={45} className="w-full" /> {/* Simulated progress */}
+            <Tabs value={sourceSelectionTab} onValueChange={(value) => setSourceSelectionTab(value as 'url' | 'library')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="url">Enter URL</TabsTrigger>
+                <TabsTrigger value="library">Select from Library</TabsTrigger>
+              </TabsList>
+              <TabsContent value="url">
+                <Card className="border-none shadow-none">
+                  <CardHeader className="px-0 pt-0">
+                    <CardTitle className="text-2xl">Provide Source Video URL</CardTitle>
+                    <CardDescription>Paste the URL of the video you want to react to (e.g., YouTube, TikTok).</CardDescription>
+                  </CardHeader>
+                  <Form {...sourceForm}>
+                    <form onSubmit={sourceForm.handleSubmit(onSourceUrlSubmit)}>
+                      <CardContent className="space-y-6 px-0">
+                        <FormField
+                          control={sourceForm.control}
+                          name="sourceUrl"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Source Video URL</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Paste YouTube, TikTok, or Twitter URL"
+                                  {...field}
+                                  disabled={isLoading}
+                                  className="max-w-xl"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {isLoading && sourceSelectionTab === 'url' && (
+                          <div className="space-y-2 max-w-xl">
+                            <p className="text-sm text-muted-foreground">Downloading video... This may take a moment.</p>
+                            <Progress value={45} className="w-full" /> {/* Simulated progress */}
+                          </div>
+                        )}
+                      </CardContent>
+                      <div className="flex justify-end mt-6">
+                        <Button type="submit" disabled={isLoading || !sourceForm.formState.isValid || sourceForm.getValues("sourceUrl") === ""} size="lg">
+                          {isLoading && sourceSelectionTab === 'url' ? "Downloading..." : "Download & Continue"}
+                        </Button>
                       </div>
+                    </form>
+                  </Form>
+                </Card>
+              </TabsContent>
+              <TabsContent value="library">
+                <Card className="border-none shadow-none">
+                  <CardHeader className="px-0 pt-0">
+                    <CardTitle className="text-2xl">Select From Your Library</CardTitle>
+                    <CardDescription>Choose a video you've previously downloaded.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="px-0">
+                    {isLoading && sourceSelectionTab === 'library' && (
+                        <div className="flex justify-center items-center h-32">
+                            <p>Loading library...</p> {/* Replace with a Skeleton loader later if desired */}
+                        </div>
+                    )}
+                    {!isLoading && libraryVideos.length === 0 && sourceSelectionTab === 'library' && (
+                      <div className="text-center text-muted-foreground py-8">
+                        <p>Your library is empty.</p>
+                        <p>Download videos using the 'Enter URL' tab first, or check back if a download is in progress.</p>
+                      </div>
+                    )}
+                    {!isLoading && libraryVideos.length > 0 && (
+                      <SourceVideoGrid
+                        videos={libraryVideos}
+                        onVideoSelect={handleLibraryVideoSelect}
+                        selectedVideoId={selectedLibraryVideoId}
+                      />
                     )}
                   </CardContent>
                   <div className="flex justify-end mt-6">
-                    <Button type="submit" disabled={isLoading} size="lg">
-                      {isLoading ? "Downloading..." : "Continue to Recording"}
+                    <Button onClick={proceedToRecording} disabled={!selectedLibraryVideoId || isLoading} size="lg">
+                      Continue to Recording
                     </Button>
                   </div>
-                </form>
-              </Form>
-            </Card>
+                </Card>
+              </TabsContent>
+            </Tabs>
           )}
           
           {/* Step 2: Recording */}
