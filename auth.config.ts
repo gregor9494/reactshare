@@ -53,8 +53,9 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const isOnDashboard = nextUrl.pathname.startsWith('/dashboard');
       const isOnApiReactions = nextUrl.pathname.startsWith('/api/reactions');
+      const isOnApiSocial = nextUrl.pathname.startsWith('/api/social');
 
-      if (isOnDashboard || isOnApiReactions) {
+      if (isOnDashboard || isOnApiReactions || isOnApiSocial) {
         return isLoggedIn; // Redirect unauthenticated users to login page for these routes
       } else if (isLoggedIn) {
        // Redirect logged-in users from public/auth pages to the dashboard

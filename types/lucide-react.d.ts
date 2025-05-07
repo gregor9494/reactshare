@@ -14,11 +14,15 @@ declare module 'lucide-react' {
   export const Clock: Icon;
   export const Download: Icon;
   export const Edit: Icon;
+  export const Eye: Icon;
+  export const ExternalLink: Icon;
   export const Facebook: Icon;
   export const Instagram: Icon;
   export const LayoutGrid: Icon;
   export const LayoutPanelTop: Icon;
+  export const Loader2: Icon;
   export const Maximize2: Icon;
+  export const MessageSquare: Icon;
   export const Minimize2: Icon;
   export const MoveHorizontal: Icon;
   export const Mic: Icon;
@@ -27,6 +31,8 @@ declare module 'lucide-react' {
   export const Music: Icon;
   export const Palette: Icon;
   export const Play: Icon;
+  export const Plus: Icon;
+  export const RefreshCw: Icon;
   export const Scissors: Icon;
   export const Settings: Icon;
   export const Share2: Icon;
@@ -35,6 +41,7 @@ declare module 'lucide-react' {
   export const Trash2: Icon;
   export const Twitch: Icon;
   export const Twitter: Icon;
+  export const TikTok: Icon;
   export const Type: Icon;
   export const User: Icon;
   export const Youtube: Icon;
@@ -42,4 +49,5 @@ declare module 'lucide-react' {
 
 declare module 'date-fns' {
   export function format(date: Date | number, formatStr: string): string;
+  export function formatDistanceToNow(date: Date | number, options?: { addSuffix?: boolean }): string;
 }

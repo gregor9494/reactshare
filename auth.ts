@@ -4,6 +4,7 @@ import Google from 'next-auth/providers/google'; // Import Google provider
 import { authConfig } from './auth.config';
 import { createClient } from '@supabase/supabase-js'; // Import Supabase client
 import { z } from 'zod'; // Using Zod for input validation
+import { getTikTokOAuthConfig } from './lib/tiktok-oauth-provider';
 
 // Initialize Supabase client using environment variables
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -77,13 +78,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return null; // Validation failed
       },
     }),
-    // Add Google provider
+    // Add Google provider with YouTube API access
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      // Optional: Specify authorization options like scope if needed
-      // authorization: { params: { scope: "openid email profile" } },
+      authorization: {
+        params: {
+          scope: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl",
+          prompt: "consent",
+          access_type: "offline",
+        }
+      },
     }),
+    // Add TikTok OAuth provider
+    getTikTokOAuthConfig(),
     // Add other providers like Facebook, etc. here if needed
   ],
   // Add adapter here if using one (e.g., Supabase adapter)
@@ -95,18 +103,197 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     ...authConfig.callbacks, // Include callbacks defined in auth.config.ts
 
-    // Example: Add user ID from Supabase to the JWT token
-    async jwt({ token, user }) {
+    // Handle OAuth flow and save tokens
+    async signIn({ user, account, profile }) {
+      // Handle Google auth
+      if (account?.provider === 'google' && account.access_token) {
+        try {
+          // For Google sign-in, we first need to check if OAuth scopes include YouTube
+          const hasYoutubeScope = account.scope?.includes('youtube') ||
+                                 account.scope?.includes('https://www.googleapis.com/auth/youtube.readonly');
+          
+          if (hasYoutubeScope && user?.id) {
+            // Store YouTube OAuth tokens with service role for database access
+            const serviceClient = createClient(
+              supabaseUrl as string,
+              process.env.SUPABASE_SERVICE_ROLE_KEY as string
+            );
+            
+            // Get user's YouTube channel data
+            const headers = {
+              Authorization: `Bearer ${account.access_token}`
+            };
+            
+            try {
+              const youtubeResponse = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
+                headers
+              });
+              
+              const youtubeData = await youtubeResponse.json();
+              const channel = youtubeData.items?.[0];
+              
+              if (channel) {
+                // Check if this social account already exists
+                const { data: existingAccount } = await serviceClient
+                  .from('social_accounts')
+                  .select()
+                  .eq('user_id', user.id)
+                  .eq('provider', 'youtube')
+                  .single();
+                
+                const profileData = {
+                  id: channel.id,
+                  title: channel.snippet?.title,
+                  description: channel.snippet?.description,
+                  thumbnails: channel.snippet?.thumbnails,
+                  statistics: channel.statistics
+                };
+                
+                const socialAccountData = {
+                  user_id: user.id,
+                  provider: 'youtube',
+                  provider_account_id: channel.id,
+                  provider_username: channel.snippet?.title,
+                  access_token: account.access_token,
+                  refresh_token: account.refresh_token || null,
+                  token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+                  profile_data: profileData,
+                  scope: account.scope,
+                  status: 'active',
+                  last_sync_at: new Date().toISOString()
+                };
+                
+                if (existingAccount) {
+                  // Update existing account
+                  await serviceClient
+                    .from('social_accounts')
+                    .update(socialAccountData)
+                    .eq('id', existingAccount.id);
+                } else {
+                  // Insert new account
+                  await serviceClient
+                    .from('social_accounts')
+                    .insert([socialAccountData]);
+                }
+              }
+            } catch (error) {
+              console.error('Error fetching YouTube data:', error);
+              // Continue sign-in even if YouTube data fetch fails
+            }
+          }
+        } catch (error) {
+          console.error('Error in account linking:', error);
+          // Continue sign-in even if account linking fails
+        }
+      }
+      
+      // Handle TikTok auth
+      if (account?.provider === 'tiktok' && account.access_token && user?.id) {
+        try {
+          // Store TikTok OAuth tokens with service role for database access
+          const serviceClient = createClient(
+            supabaseUrl as string,
+            process.env.SUPABASE_SERVICE_ROLE_KEY as string
+          );
+          
+          // Get user's TikTok account data
+          const headers = {
+            Authorization: `Bearer ${account.access_token}`
+          };
+          
+          try {
+            // Fetch TikTok user info
+            const tiktokResponse = await fetch('https://open-api.tiktok.com/user/info/', {
+              headers
+            });
+            
+            const tiktokData = await tiktokResponse.json();
+            const userInfo = tiktokData.data?.user;
+            
+            if (userInfo) {
+              // Check if this social account already exists
+              const { data: existingAccount } = await serviceClient
+                .from('social_accounts')
+                .select()
+                .eq('user_id', user.id)
+                .eq('provider', 'tiktok')
+                .single();
+              
+              const profileData = {
+                id: userInfo.open_id,
+                display_name: userInfo.display_name,
+                avatar_url: userInfo.avatar_url,
+                bio_description: userInfo.bio_description,
+                follower_count: userInfo.follower_count,
+                following_count: userInfo.following_count,
+                video_count: userInfo.video_count,
+              };
+              
+              const socialAccountData = {
+                user_id: user.id,
+                provider: 'tiktok',
+                provider_account_id: userInfo.open_id,
+                provider_username: userInfo.display_name,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token || null,
+                token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+                profile_data: profileData,
+                scope: account.scope,
+                status: 'active',
+                last_sync_at: new Date().toISOString()
+              };
+              
+              if (existingAccount) {
+                // Update existing account
+                await serviceClient
+                  .from('social_accounts')
+                  .update(socialAccountData)
+                  .eq('id', existingAccount.id);
+              } else {
+                // Insert new account
+                await serviceClient
+                  .from('social_accounts')
+                  .insert([socialAccountData]);
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching TikTok data:', error);
+            // Continue sign-in even if TikTok data fetch fails
+          }
+        } catch (error) {
+          console.error('Error in TikTok account linking:', error);
+          // Continue sign-in even if account linking fails
+        }
+      }
+      
+      // Always return true to allow sign-in
+      return true;
+    },
+
+    // Add user ID from Supabase to the JWT token
+    async jwt({ token, user, account }) {
       if (user) { // User object is available on initial sign in
         token.id = user.id;
       }
+      
+      // Add OAuth tokens to token if available
+      if (account) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.provider = account.provider;
+      }
+      
       return token;
     },
 
-    // Example: Add user ID from token to the session object
+    // Add user ID from token to the session object
     async session({ session, token }) {
       if (session.user && token.id) {
         session.user.id = token.id as string; // Add id to session user
+        // Add provider info to session if available
+        if (token.provider) {
+          (session.user as any).provider = token.provider;
+        }
       }
       return session;
     },

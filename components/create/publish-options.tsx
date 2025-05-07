@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,42 +9,206 @@ import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
-import { CalendarIcon, Clock, Youtube, Instagram, Twitter, Facebook, Twitch, Check } from "lucide-react"
+import { CalendarIcon, Clock, Youtube, Instagram, Twitter, Facebook, Twitch, Check, Loader2 } from "lucide-react"
+import TikTok from "@/components/ui/icons/tiktok"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import useSocialAccounts from "@/hooks/use-social-accounts"
+import useSocialShares from "@/hooks/use-social-shares"
+import useYouTubePlaylists from "@/hooks/use-youtube-playlists"
+import { toast } from "@/components/ui/use-toast"
 
 interface PublishOptionsProps {
   onPublishingComplete?: () => void;
+  reactionId?: string;
+  initialTitle?: string;
 }
 
-export function PublishOptions({ onPublishingComplete }: PublishOptionsProps = {}) {
-  const [date, setDate] = useState<Date>()
-  const [title, setTitle] = useState("")
+export function PublishOptions({ onPublishingComplete, reactionId, initialTitle }: PublishOptionsProps = {}) {
+  const [date, setDate] = useState<Date | undefined>(new Date())
+  const [title, setTitle] = useState(initialTitle || "")
   const [description, setDescription] = useState("")
   const [tags, setTags] = useState("")
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
   const [useOptimalTimes, setUseOptimalTimes] = useState(false)
   const [publishComplete, setPublishComplete] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
+  const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>('private')
+  const [selectedPlaylist, setSelectedPlaylist] = useState<string>("")
+  
+  // Get social account and share data/functions
+  const { accounts } = useSocialAccounts();
+  const { uploadToYouTube, scheduleShare } = useSocialShares();
+  const { playlists, loadPlaylists } = useYouTubePlaylists();
+  
+  // Check for connected accounts
+  const [availablePlatforms, setAvailablePlatforms] = useState<string[]>([]);
+  
+  // Effect to check which platforms are available based on connected accounts
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      const available = accounts
+        .filter(account => account.status === 'active')
+        .map(account => account.provider.toLowerCase());
+      
+      setAvailablePlatforms(available);
+      
+      // Fetch YouTube playlists if YouTube is connected
+      if (available.includes('youtube')) {
+        loadPlaylists();
+      }
+    }
+  }, [accounts, loadPlaylists]);
   
   // Toggle platform selection
   const togglePlatform = (platform: string) => {
-    setSelectedPlatforms(prev => 
-      prev.includes(platform) 
-        ? prev.filter(p => p !== platform) 
-        : [...prev, platform]
-    )
+    // Only allow selecting platforms that are connected
+    if (availablePlatforms.includes(platform)) {
+      setSelectedPlatforms(prev =>
+        prev.includes(platform)
+          ? prev.filter(p => p !== platform)
+          : [...prev, platform]
+      )
+    } else {
+      toast({
+        title: "Account not connected",
+        description: `Please connect your ${platform} account in the Social Accounts page first.`,
+        variant: "destructive"
+      })
+    }
   }
   
-  // Complete publishing
-  const completePublishing = () => {
-    setPublishComplete(true)
-    if (onPublishingComplete) {
-      onPublishingComplete()
+  // Handle publishing to platforms
+  const handlePublish = async () => {
+    if (!reactionId) {
+      toast({
+        title: "Missing reaction",
+        description: "Cannot publish without a reaction video",
+        variant: "destructive"
+      })
+      return
     }
+    
+    setIsPublishing(true)
+    
+    try {
+      // Handle publishing to each selected platform
+      for (const platform of selectedPlatforms) {
+        if (platform === 'youtube') {
+          await publishToYouTube()
+        } else if (platform === 'tiktok') {
+          await publishToTikTok()
+        } else {
+          // For other platforms, schedule for future implementation
+          await scheduleForPlatform(platform)
+        }
+      }
+      
+      setPublishComplete(true)
+      
+      toast({
+        title: "Published successfully",
+        description: `Your reaction has been published to ${selectedPlatforms.length} platform(s)`,
+        variant: "default"
+      })
+      
+      if (onPublishingComplete) {
+        onPublishingComplete()
+      }
+    } catch (error) {
+      toast({
+        title: "Publishing failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive"
+      })
+      console.error("Publishing error:", error)
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+  
+  // Publish specifically to YouTube
+  const publishToYouTube = async () => {
+    if (!reactionId) return null
+    
+    const tagsList = tags.split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+    
+    const result = await uploadToYouTube({
+      reactionId,
+      title,
+      description,
+      privacy,
+      tags: tagsList,
+      playlistId: selectedPlaylist || undefined
+    })
+    
+    if (!result) {
+      throw new Error("Failed to upload to YouTube")
+    }
+    
+    return result
+  }
+  
+  // Publish specifically to TikTok
+  const publishToTikTok = async () => {
+    if (!reactionId) return null
+    
+    const tagsList = tags.split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+    
+    // Call the API to upload to TikTok
+    const response = await fetch('/api/social/tiktok/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        reactionId,
+        title,
+        description,
+        privacy,
+        tags: tagsList
+      })
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || "Failed to upload to TikTok")
+    }
+    
+    const result = await response.json()
+    return result
+  }
+  
+  // Schedule for other platforms (placeholder for future implementation)
+  const scheduleForPlatform = async (platform: string) => {
+    if (!reactionId || !date) return null
+    
+    // For now, just schedule the share in the database for future processing
+    const result = await scheduleShare({
+      reactionId,
+      provider: platform,
+      title,
+      description,
+      scheduledFor: date,
+      privacy,
+      tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+    })
+    
+    if (!result) {
+      throw new Error(`Failed to schedule for ${platform}`)
+    }
+    
+    return result
   }
   
   // Platform data
   const platforms = [
     { id: 'youtube', name: 'YouTube', icon: Youtube, color: 'text-red-600' },
+    { id: 'tiktok', name: 'TikTok', icon: TikTok, color: 'text-black' },
     { id: 'instagram', name: 'Instagram', icon: Instagram, color: 'text-pink-600' },
     { id: 'twitter', name: 'Twitter/X', icon: Twitter, color: 'text-blue-400' },
     { id: 'facebook', name: 'Facebook', icon: Facebook, color: 'text-blue-600' },
@@ -89,13 +253,56 @@ export function PublishOptions({ onPublishingComplete }: PublishOptionsProps = {
               <label htmlFor="tags" className="text-sm font-medium">
                 Tags
               </label>
-              <Input 
-                id="tags" 
-                placeholder="reaction, viral, trending (comma separated)" 
+              <Input
+                id="tags"
+                placeholder="reaction, viral, trending (comma separated)"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <label htmlFor="privacy" className="text-sm font-medium">
+                Privacy Setting
+              </label>
+              <Select
+                value={privacy}
+                onValueChange={(value) => setPrivacy(value as 'public' | 'unlisted' | 'private')}
+              >
+                <SelectTrigger id="privacy" className="w-full">
+                  <SelectValue placeholder="Select privacy setting" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Private (Only you can see)</SelectItem>
+                  <SelectItem value="unlisted">Unlisted (Anyone with the link)</SelectItem>
+                  <SelectItem value="public">Public (Visible to everyone)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* YouTube Playlist Selection - Only show when YouTube is selected */}
+            {selectedPlatforms.includes('youtube') && (
+              <div className="space-y-2 mt-4">
+                <label htmlFor="youtubePlaylist" className="text-sm font-medium">
+                  YouTube Playlist
+                </label>
+                <Select
+                  value={selectedPlaylist}
+                  onValueChange={setSelectedPlaylist}
+                >
+                  <SelectTrigger id="youtubePlaylist" className="w-full">
+                    <SelectValue placeholder="Add to playlist (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None (Don't add to playlist)</SelectItem>
+                    {playlists.map(playlist => (
+                      <SelectItem key={playlist.id} value={playlist.id}>
+                        {playlist.title} ({playlist.itemCount} videos)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </div>
         
@@ -177,6 +384,7 @@ export function PublishOptions({ onPublishingComplete }: PublishOptionsProps = {
               <p className="font-medium">Optimal posting times:</p>
               <ul className="list-disc pl-5 mt-1 space-y-1">
                 <li>YouTube: Weekends at 9-11 AM</li>
+                <li>TikTok: Tuesday at 9 AM and Thursday at 7-9 PM</li>
                 <li>Instagram: Wednesday at 11 AM and Friday at 10-11 AM</li>
                 <li>Twitter/X: Weekdays at 9 AM</li>
                 <li>Facebook: Weekdays at 1-4 PM</li>
@@ -189,8 +397,18 @@ export function PublishOptions({ onPublishingComplete }: PublishOptionsProps = {
         {/* Action buttons */}
         <div className="flex justify-between pt-4">
           <Button variant="outline">Save as Draft</Button>
-          <Button onClick={completePublishing}>
-            {selectedPlatforms.length > 0 ? "Publish Now" : "Skip Publishing"}
+          <Button
+            onClick={handlePublish}
+            disabled={isPublishing || (!reactionId && selectedPlatforms.length > 0)}
+          >
+            {isPublishing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              selectedPlatforms.length > 0 ? "Publish Now" : "Skip Publishing"
+            )}
           </Button>
         </div>
         

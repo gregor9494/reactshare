@@ -1,6 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
+import { useSession } from "next-auth/react"
+import { signIn } from "next-auth/react"
+import { formatDistanceToNow } from 'date-fns'
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
@@ -21,83 +24,87 @@ import {
   Twitter,
   Facebook,
   Twitch,
-  TwitterIcon as TikTok,
   RefreshCw,
   Trash2,
   Plus,
+  Loader2,
 } from "lucide-react"
+import TikTok from "@/components/ui/icons/tiktok"
+import useSocialAccounts from "@/hooks/use-social-accounts"
+
+type PlatformIconType = React.ComponentType<{ className?: string }>;
+
+interface PlatformConfig {
+  name: string;
+  icon: PlatformIconType;
+  color: string;
+  connectAction: () => void;
+  isAvailable: boolean;
+}
 
 export function ConnectedAccounts() {
-  // Mock data - in a real app, this would come from an API
-  const [accounts, setAccounts] = useState([
-    {
-      id: "1",
-      platform: "YouTube",
-      username: "ReactShareOfficial",
-      connected: true,
-      status: "active",
-      lastSync: "2 hours ago",
-      icon: Youtube,
-      color: "text-red-600",
-    },
-    {
-      id: "2",
-      platform: "Instagram",
-      username: "reactshare",
-      connected: true,
-      status: "active",
-      lastSync: "1 day ago",
-      icon: Instagram,
-      color: "text-pink-600",
-    },
-    {
-      id: "3",
-      platform: "Twitter",
-      username: "ReactShare",
-      connected: true,
-      status: "active",
-      lastSync: "3 hours ago",
-      icon: Twitter,
-      color: "text-blue-400",
-    },
-    {
-      id: "4",
-      platform: "Facebook",
-      username: "ReactShare Official",
-      connected: true,
-      status: "token_expired",
-      lastSync: "5 days ago",
-      icon: Facebook,
-      color: "text-blue-600",
-    },
-    {
-      id: "5",
-      platform: "Twitch",
-      username: "ReactShareLive",
-      connected: true,
-      status: "active",
-      lastSync: "12 hours ago",
-      icon: Twitch,
-      color: "text-purple-600",
-    },
-    {
-      id: "6",
-      platform: "TikTok",
-      username: "reactshare",
-      connected: false,
-      status: "disconnected",
-      lastSync: "Never",
-      icon: TikTok,
-      color: "text-black",
-    },
-  ])
+  const { data: session } = useSession();
+  const {
+    accounts,
+    isLoading,
+    refreshAccount,
+    toggleAccountStatus,
+    disconnectAccount
+  } = useSocialAccounts();
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
-  const toggleConnection = (id: string) => {
-    setAccounts(
-      accounts.map((account) => (account.id === id ? { ...account, connected: !account.connected } : account)),
-    )
+  // Get platform-specific data
+  const getPlatformData = (provider: string): {icon: PlatformIconType, color: string} => {
+    switch (provider.toLowerCase()) {
+      case 'youtube':
+        return { icon: Youtube, color: "text-red-600" }
+      case 'instagram':
+        return { icon: Instagram, color: "text-pink-600" }
+      case 'twitter':
+        return { icon: Twitter, color: "text-blue-400" }
+      case 'facebook':
+        return { icon: Facebook, color: "text-blue-600" }
+      case 'twitch':
+        return { icon: Twitch, color: "text-purple-600" }
+      case 'tiktok':
+        return { icon: TikTok, color: "text-black" }
+      default:
+        return { icon: Plus, color: "text-gray-400" }
+    }
   }
 
+  // Format the last sync time
+  const formatLastSync = (lastSyncAt: string | null): string => {
+    if (!lastSyncAt) return 'Never';
+    try {
+      return formatDistanceToNow(new Date(lastSyncAt), { addSuffix: true });
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  // Handle refreshing an account
+  const handleRefresh = async (accountId: string) => {
+    setRefreshingId(accountId);
+    try {
+      await refreshAccount(accountId);
+    } finally {
+      setRefreshingId(null);
+    }
+  }
+
+  // Handle disconnecting an account
+  const handleDisconnect = async (accountId: string, provider: string) => {
+    setDisconnectingId(accountId);
+    try {
+      await disconnectAccount(accountId, provider);
+    } finally {
+      setDisconnectingId(null);
+    }
+  }
+
+  // Status badge component
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
@@ -123,65 +130,167 @@ export function ConnectedAccounts() {
     }
   }
 
+  // Define available platforms and their connection methods
+  const platforms: PlatformConfig[] = [
+    {
+      name: "YouTube",
+      icon: Youtube,
+      color: "text-red-600",
+      connectAction: () => signIn('google', { callbackUrl: '/dashboard/social' }),
+      isAvailable: true
+    },
+    {
+      name: "Instagram",
+      icon: Instagram,
+      color: "text-pink-600",
+      connectAction: () => alert("Instagram integration coming soon"),
+      isAvailable: false
+    },
+    {
+      name: "Twitter",
+      icon: Twitter,
+      color: "text-blue-400",
+      connectAction: () => alert("Twitter integration coming soon"),
+      isAvailable: false
+    },
+    {
+      name: "Facebook",
+      icon: Facebook,
+      color: "text-blue-600",
+      connectAction: () => alert("Facebook integration coming soon"),
+      isAvailable: false
+    },
+    {
+      name: "TikTok",
+      icon: TikTok,
+      color: "text-black",
+      connectAction: () => signIn('tiktok', { callbackUrl: '/dashboard/social' }),
+      isAvailable: true
+    }
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex h-40 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Loading accounts...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {accounts.map((account) => (
-        <div key={account.id} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${account.color}`}>
-              <account.icon className="h-6 w-6" />
+      {accounts.map((account) => {
+        const { icon: Icon, color } = getPlatformData(account.provider);
+        const isConnected = account.status === 'active';
+        const isEnabled = account.status !== 'disconnected';
+        const lastSync = formatLastSync(account.last_sync_at);
+        
+        return (
+          <div key={account.id} className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${color}`}>
+                <Icon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-medium">{account.provider.charAt(0).toUpperCase() + account.provider.slice(1)}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {account.provider_username ? `@${account.provider_username}` : 'No username'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium">{account.platform}</h3>
-              <p className="text-sm text-muted-foreground">@{account.username}</p>
+
+            <div className="ml-auto flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Last synced: {lastSync}</span>
+                {getStatusBadge(account.status)}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={isEnabled}
+                  onCheckedChange={(checked) => toggleAccountStatus(account.id, checked)}
+                  disabled={account.status === "disconnected"}
+                />
+                <span className="text-sm">{isEnabled ? "Enabled" : "Disabled"}</span>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Refresh connection"
+                  onClick={() => handleRefresh(account.id)}
+                  disabled={refreshingId === account.id}
+                >
+                  {refreshingId === account.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="text-destructive"
+                      disabled={disconnectingId === account.id}
+                    >
+                      {disconnectingId === account.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Disconnect Account</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to disconnect your {account.provider} account? This will remove all
+                        permissions and you'll need to reconnect to publish content to this platform.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground"
+                        onClick={() => handleDisconnect(account.id, account.provider)}
+                      >
+                        Disconnect
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           </div>
+        )
+      })}
 
-          <div className="ml-auto flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Last synced: {account.lastSync}</span>
-              {getStatusBadge(account.status)}
+      {/* Available platforms to connect */}
+      {platforms
+        .filter(platform => !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
+        .filter(platform => platform.isAvailable)
+        .map((platform, idx) => (
+          <div key={`platform-${idx}`} className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${platform.color}`}>
+                {/* Use capitalized component syntax */}
+                {React.createElement(platform.icon, { className: "h-6 w-6" })}
+              </div>
+              <div>
+                <h3 className="font-medium">{platform.name}</h3>
+                <p className="text-sm text-muted-foreground">Not connected</p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={account.connected}
-                onCheckedChange={() => toggleConnection(account.id)}
-                disabled={account.status === "disconnected"}
-              />
-              <span className="text-sm">{account.connected ? "Enabled" : "Disabled"}</span>
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="outline" size="icon" title="Refresh connection">
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="icon" className="text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Disconnect Account</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to disconnect your {account.platform} account? This will remove all
-                      permissions and you'll need to reconnect to publish content to this platform.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction className="bg-destructive text-destructive-foreground">
-                      Disconnect
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+            <div className="ml-auto">
+              <Button onClick={platform.connectAction}>Connect {platform.name}</Button>
             </div>
           </div>
-        </div>
-      ))}
+        ))}
 
       <div className="rounded-lg border border-dashed p-8">
         <div className="flex flex-col items-center justify-center text-center">
@@ -190,7 +299,24 @@ export function ConnectedAccounts() {
           </div>
           <h3 className="mt-4 text-lg font-medium">Connect a new account</h3>
           <p className="mt-2 text-sm text-muted-foreground">Add more social media accounts to expand your reach</p>
-          <Button className="mt-4">Connect Account</Button>
+          <div className="mt-4 flex flex-wrap gap-2 justify-center">
+            {platforms
+              .filter(platform => !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
+              .map((platform, idx) => (
+                <Button
+                  key={`connect-${idx}`}
+                  onClick={platform.connectAction}
+                  disabled={!platform.isAvailable}
+                  variant={platform.isAvailable ? "default" : "outline"}
+                  className="flex items-center gap-2"
+                >
+                  {/* Use capitalized component syntax */}
+                  {React.createElement(platform.icon, { className: "h-4 w-4" })}
+                  {platform.name}
+                  {!platform.isAvailable && " (Coming Soon)"}
+                </Button>
+              ))}
+          </div>
         </div>
       </div>
     </div>
