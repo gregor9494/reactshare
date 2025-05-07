@@ -78,7 +78,9 @@ export default function CreatePage() {
             setIsLoading(false);
             return;
           }
-          const videos: SourceVideo[] = await response.json();
+          const result = await response.json();
+          // Ensure result.videos is an array before trying to filter
+          const videos: SourceVideo[] = Array.isArray(result.videos) ? result.videos : [];
           setLibraryVideos(videos.filter(v => v.status === 'completed' && v.storage_path)); // Only show completed and available videos
           setIsLoading(false);
         } catch (err) {

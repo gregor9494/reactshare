@@ -141,6 +141,7 @@ export async function POST(request: Request) {
           videoInfo.title = info.title || '';
           videoInfo.platform = info.extractor || '';
           videoInfo.duration = info.duration || 0;
+          const thumbnailUrl = info.thumbnail || null; // Extract thumbnail URL
           
           // If duration is too long (over 10 minutes), add a warning
           if (videoInfo.duration > 600) {
@@ -153,7 +154,8 @@ export async function POST(request: Request) {
             .update({
               title: videoInfo.title,
               platform: videoInfo.platform,
-              duration: videoInfo.duration
+              duration: videoInfo.duration,
+              thumbnail_url: thumbnailUrl, // Add thumbnail_url to the update
             })
             .eq('id', sourceVideo.id);
           
