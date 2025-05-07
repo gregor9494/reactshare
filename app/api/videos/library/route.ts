@@ -28,17 +28,18 @@ export async function GET(request: Request) {
       .from('source_videos')
       .select('*')
       .eq('user_id', userId)
+      .eq('status', 'completed') // Only fetch completed videos
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching source videos:', error);
-      return NextResponse.json({ error: 'Failed to fetch source videos', details: error.message }, { status: 500 });
+      console.error('Error fetching completed source videos:', error);
+      return NextResponse.json({ error: 'Failed to fetch completed source videos', details: error.message }, { status: 500 });
     }
 
-    return NextResponse.json(data as SourceVideo[], { status: 200 });
+    return NextResponse.json({ videos: data as SourceVideo[] }, { status: 200 });
 
   } catch (err) {
-    console.error('API Error fetching source videos:', err);
+    console.error('API Error fetching completed source videos:', err);
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }

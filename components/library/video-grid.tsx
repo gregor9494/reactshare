@@ -14,17 +14,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download } from "lucide-react"; // Added Download icon
-import { Reaction } from '@/lib/types'; // Import Reaction type
+import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download } from "lucide-react"; // Removed problematic icons
+import { SourceVideo } from '@/lib/types'; // Import SourceVideo type
 
 // Define props interface
 interface VideoGridProps {
-  reactions: Reaction[]; // Accept an array of Reaction objects
+  videos: SourceVideo[]; // Accept an array of SourceVideo objects
   // Removed type prop for MVP simplicity
 }
 
 // Update component signature
-export function VideoGrid({ reactions }: VideoGridProps) {
+export function VideoGrid({ videos }: VideoGridProps) {
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
 
   // Removed mock data
@@ -39,11 +39,11 @@ export function VideoGrid({ reactions }: VideoGridProps) {
 
   const isSelected = (id: string) => selectedVideos.includes(id);
 
-  // Display a message if there are no reactions
-  if (!reactions || reactions.length === 0) {
+  // Display a message if there are no videos
+  if (!videos || videos.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
-        No reactions found in your library.
+        No videos found in your library.
       </div>
     );
   }
@@ -64,74 +64,114 @@ export function VideoGrid({ reactions }: VideoGridProps) {
                 // If videos are selected, initiate bulk download
                 if (selectedVideos.length > 0) {
                   selectedVideos.forEach(id => {
-                    const reaction = reactions.find(r => r.id === id);
-                    if (reaction && reaction.reaction_video_storage_path) {
-                      // Open download in new tab/window
-                      window.open(`/api/reactions/download?id=${id}`, '_blank');
+                    const video = videos.find(v => v.id === id);
+                    // Prefer storage_path for direct download, otherwise use API endpoint
+                    if (video) {
+                      if (video.storage_path) {
+                        // Assuming storage_path is a publicly accessible URL or we need a signed URL
+                        // For simplicity, let's assume it's a direct link or needs an API endpoint
+                        // If Supabase storage, this would be:
+                        // const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+                        // const { data } = supabase.storage.from('source_videos_bucket_name').getPublicUrl(video.storage_path);
+                        // window.open(data.publicUrl, '_blank');
+                        // For now, let's use a generic download endpoint for source videos
+                        window.open(`/api/videos/download?id=${id}`, '_blank');
+                      } else {
+                        // Fallback if no direct storage_path, though 'completed' status should imply one
+                        window.open(`/api/videos/download?id=${id}`, '_blank');
+                      }
                     }
                   });
                 }
               }}
+              disabled={selectedVideos.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
-              Download
+              Download Selected
             </Button>
-            <Button variant="destructive" size="sm">
-              Delete
+            <Button variant="destructive" size="sm" disabled={selectedVideos.length === 0}>
+              Delete Selected {/* Placeholder */}
             </Button>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {/* Map over the actual reactions data */}
-        {reactions.map((reaction) => (
-          <Card key={reaction.id} className="overflow-hidden">
+        {/* Map over the actual source videos data */}
+        {videos.map((video) => (
+          <Card key={video.id} className="overflow-hidden">
             <div className="group relative">
-              <div className="aspect-video w-full overflow-hidden">
-                {/* Placeholder for thumbnail - ideally would use reaction.reaction_video_storage_path */}
-                {/* For now, display a simple placeholder or status */}
-                <div className="relative h-full w-full bg-muted flex items-center justify-center text-center text-sm p-2">
-                   <span className="text-muted-foreground">{reaction.status}</span>
+              <div className="aspect-video w-full overflow-hidden bg-muted">
+                {video.thumbnail_url ? (
+                  <Image
+                    src={video.thumbnail_url}
+                    alt={video.title || 'Video thumbnail'}
+                    width={320}
+                    height={180}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                    {/* Icon removed due to import issues */}
+                    <span>No Thumbnail</span>
+                  </div>
+                )}
+              </div>
+              {video.duration && (
+                <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white">
+                  {new Date(video.duration * 1000).toISOString().substr(14, 5)} {/* Format duration */}
                 </div>
-                {/* Removed Image component for now */}
-                {/* <Image
-                  src={reaction.thumbnail || "/placeholder.svg"} // Need actual thumbnail URL
-                  alt={reaction.title || 'Reaction Video'}
-                  width={320}
-                  height={180}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                /> */}
-              </div>
-              {/* Remove duration overlay for now */}
-              {/* <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white">
-                {reaction.duration}
-              </div> */}
-              {/* Keep Play button placeholder */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                <Button size="icon" variant="secondary" className="h-12 w-12 rounded-full">
-                  <Play className="h-6 w-6" />
-                </Button>
-              </div>
+              )}
+              {video.storage_path && ( // Only show play button if video is available
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  {/* Link to play the video - needs a player or direct link */}
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="h-12 w-12 rounded-full"
+                    onClick={() => {
+                      // This would ideally open a video player modal or navigate to a player page
+                      // For now, let's try to open the storage_path if it's a direct URL
+                      // Or use a download link as a proxy for "playing"
+                       window.open(`/api/videos/download?id=${video.id}`, '_blank');
+                    }}
+                  >
+                    <Play className="h-6 w-6" />
+                  </Button>
+                </div>
+              )}
               <div className="absolute left-2 top-2">
                 <Checkbox
-                  checked={isSelected(reaction.id)}
-                  onCheckedChange={() => toggleVideoSelection(reaction.id)}
-                  className="h-5 w-5 rounded-sm border-2 bg-black/50"
+                  checked={isSelected(video.id)}
+                  onCheckedChange={() => toggleVideoSelection(video.id)}
+                  className="h-5 w-5 rounded-sm border-2 bg-black/50 data-[state=checked]:bg-primary"
                 />
               </div>
             </div>
             <CardContent className="p-3">
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  {/* Display reaction title or source URL */}
-                  <h3 className="font-medium line-clamp-1">{reaction.title || reaction.source_video_url}</h3>
+                  <h3 className="font-medium line-clamp-2" title={video.title || video.original_url}>
+                    {video.title || video.original_url}
+                  </h3>
                   <div className="flex items-center text-xs text-muted-foreground">
-                    {/* Display status and creation date */}
-                    <span>Status: {reaction.status}</span>
-                    <span className="mx-1">•</span>
-                    <span>Created: {new Date(reaction.created_at).toLocaleDateString()}</span>
+                    {video.file_format && <span>{video.file_format.toUpperCase()}</span>}
+                    {video.file_format && video.file_size && <span className="mx-1">•</span>}
+                    {video.file_size && <span>{(video.file_size / (1024 * 1024)).toFixed(2)} MB</span>}
+                    { (video.file_format || video.file_size) && <span className="mx-1">•</span>}
+                    <span>Added: {new Date(video.created_at).toLocaleDateString()}</span>
                   </div>
+                  {video.original_url && (
+                    <Link
+                        href={video.original_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-500 hover:underline flex items-center"
+                      >
+                        {/* Icon removed due to import issues */}
+                        Source
+                      </Link>
+                  )}
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -140,41 +180,50 @@ export function VideoGrid({ reactions }: VideoGridProps) {
                       <span className="sr-only">Open menu</span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  <DropdownMenuContent align="end" className="w-52"> {/* Increased width */}
+                    <DropdownMenuLabel>Video Actions</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {/* Update links/actions to use reaction.id - these are placeholders */}
-                    <DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                         window.open(`/api/videos/download?id=${video.id}`, '_blank');
+                      }}
+                      disabled={!video.storage_path}
+                    >
                       <Play className="mr-2 h-4 w-4" />
-                      Play {/* Placeholder action */}
+                      Play/Preview
                     </DropdownMenuItem>
-                    <DropdownMenuItem>
+                     <DropdownMenuItem
+                      onClick={() => {
+                        // Navigate to create page with source_video_id
+                        window.location.href = `/dashboard/create?sourceVideoId=${video.id}`;
+                      }}
+                    >
                       <Edit className="mr-2 h-4 w-4" />
-                      Edit {/* Placeholder action */}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <Share2 className="mr-2 h-4 w-4" />
-                      Share {/* Placeholder action */}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <BarChart3 className="mr-2 h-4 w-4" />
-                      Analytics {/* Placeholder action */}
+                      Create Reaction
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
-                        if (reaction.reaction_video_storage_path) {
-                          window.open(`/api/reactions/download?id=${reaction.id}`, '_blank');
+                        if (video.storage_path) {
+                          window.open(`/api/videos/download?id=${video.id}`, '_blank');
                         }
                       }}
-                      disabled={!reaction.reaction_video_storage_path}
+                      disabled={!video.storage_path}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      Download
+                      Download Video
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled> {/* Placeholder */}
+                      <Share2 className="mr-2 h-4 w-4" />
+                      Share Video
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled> {/* Placeholder */}
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      View Analytics
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive">
+                    <DropdownMenuItem className="text-destructive" disabled> {/* Placeholder */}
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete {/* Placeholder action */}
+                      Delete Video
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

@@ -14,9 +14,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning> {/* suppressHydrationWarning often helpful with providers */}
-      <body> {/* Ensure body starts immediately after html or on the next line */}
-        <Providers> {/* Wrap children with the Providers component */}
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <Providers>
           {children}
         </Providers>
       </body>
