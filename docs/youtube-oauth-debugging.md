@@ -1,78 +1,67 @@
-# YouTube OAuth Debugging Guide
+# YouTube OAuth Troubleshooting Guide
 
-## Problem: `redirect_uri_mismatch` Error
+This document provides detailed instructions for troubleshooting common issues with YouTube OAuth integration.
 
-When connecting to YouTube, you may encounter a `400: redirect_uri_mismatch` error. This occurs when the callback URL registered in your Google Cloud Console doesn't match the one used by your application during the OAuth flow.
+## Fixing "redirect_uri_mismatch" Error
 
-## Root Cause
+The `redirect_uri_mismatch` error is one of the most common issues encountered when setting up OAuth with YouTube/Google. This happens when the callback URL registered in your Google Cloud Console doesn't match the URL that our application is sending during the authentication flow.
 
-The issue is that NextAuth.js uses different callback URLs depending on the provider ID:
+### Step 1: Locate Your OAuth Client Settings
 
-- When using `signIn('google')` → `/api/auth/callback/google`
-- When using `signIn('youtube')` → `/api/auth/callback/youtube`
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Select your project
+3. Click on the OAuth 2.0 Client ID that you're using for YouTube integration
 
-If only the Google callback URL is registered in Google Cloud Console, but you're using the custom YouTube provider in your code, this mismatch occurs.
+### Step 2: Add All Required Redirect URIs
 
-## Solution
+For our application, you need to add **multiple** redirect URIs to ensure that authentication works correctly:
 
-### 1. Register Both Callback URLs in Google Cloud Console
+1. In the "Authorized redirect URIs" section, add ALL of the following URLs:
+   - `https://your-domain.com/api/auth/callback/youtube`
+   - `https://your-domain.com/api/auth/callback/google`
+   
+   (Replace `your-domain.com` with your actual domain name. If testing locally, use `localhost:3000` or whatever port your application is running on)
 
-In your [Google Cloud Console](https://console.cloud.google.com/apis/credentials), add **both** of these redirect URIs to your OAuth 2.0 Client ID:
+2. Make sure there are no trailing slashes at the end of the URLs
+3. Ensure the protocol (http/https) matches your actual deployment
+4. Click "Save" to apply the changes
 
-```
-https://yourdomain.com/api/auth/callback/google
-https://yourdomain.com/api/auth/callback/youtube
-```
+### Step 3: Wait for Changes to Propagate
 
-For local development:
-```
-http://localhost:3000/api/auth/callback/google
-http://localhost:3000/api/auth/callback/youtube
-```
+Google's systems may take up to 5-10 minutes to fully propagate your changes. This is a common source of confusion as users try again immediately and still see the error.
 
-### 2. Ensure Proper Provider Configuration
+After adding the redirect URIs:
+1. Wait at least 5 minutes
+2. Clear your browser cache or try in an incognito window
+3. Then attempt to connect to YouTube again
 
-The application now has two providers configured in `auth.ts`:
+### Common Mistakes to Avoid
 
-1. The standard Google provider (with ID 'google')
-2. A custom YouTube provider (with ID 'youtube')
+1. **Missing the "google" callback**: While we use a custom YouTube provider, the system may sometimes fall back to the generic Google provider
+2. **Protocol mismatch**: Using `https://` when your application is only served over `http://`, or vice versa
+3. **Port mismatch in development**: Using `:3000` in production but testing with a different port locally
+4. **Trailing slashes**: Adding `/` at the end of URLs (Google treats these as different URLs)
+5. **Subdomain issues**: Using `www.` when your application doesn't include it, or vice versa
 
-Both use the same Google OAuth endpoints but have different provider IDs for NextAuth.js.
+### Environment-Specific Configurations
 
-### 3. Authentication Flow
+#### Production Environment
+- Always use HTTPS URLs for production
+- Ensure your NEXTAUTH_URL environment variable is set correctly
 
-The auth flow has been updated to accept tokens from either provider:
+#### Development Environment
+- Add both `http://localhost:PORT/api/auth/callback/youtube` and `http://localhost:PORT/api/auth/callback/google`
+- Ensure your NEXTAUTH_URL environment variable points to your local environment
 
-```typescript
-// Handle Google or YouTube auth
-if ((account?.provider === 'google' || account?.provider === 'youtube') && account.access_token) {
-  // Check if this is a YouTube authentication
-  const isYouTubeAuth = account.provider === 'youtube' || 
-                       (account.provider === 'google' && (
-                         account.scope?.includes('youtube') ||
-                         account.scope?.includes('https://www.googleapis.com/auth/youtube.readonly')
-                       ));
-  
-  if (isYouTubeAuth && user?.id) {
-    // Save the token for YouTube access
-    // ...
-  }
-}
-```
+### Getting Technical Support
 
-## Troubleshooting
+If you continue to experience issues after following these steps:
 
-If you continue to experience issues:
+1. Check the browser console for specific error details
+2. Look at the network tab to see the exact redirect URI being sent to Google
+3. Verify that your Google API project has YouTube Data API v3 enabled
+4. Ensure your OAuth consent screen is configured correctly with the appropriate scopes
 
-1. Check the browser console for OAuth debugging information
-2. Verify that both callback URLs are registered in Google Cloud Console
-3. Ensure you have the correct scopes configured (`youtube.readonly`, `youtube.force-ssl`, etc.)
-4. Remember that changes to OAuth settings in Google Cloud Console may take a few minutes to propagate
+---
 
-## Understanding NextAuth.js Callback URLs
-
-NextAuth.js constructs callback URLs based on:
-- Your site's base URL (from `NEXTAUTH_URL` environment variable or inferred from the request)
-- The provider ID used in the `signIn()` call
-
-This is why using `signIn('youtube')` requires a different callback URL than `signIn('google')`, even though both use Google's OAuth endpoints.
+Remember that authentication issues are almost always related to mismatched URLs or incorrect OAuth configuration. By carefully following these steps, most issues can be resolved without needing to modify the application code.

@@ -83,35 +83,46 @@ export function YouTubeIntegration() {
                 <AlertTitle>YouTube OAuth Configuration Error</AlertTitle>
                 <AlertDescription className="text-left">
                   <p className="mb-2">
-                    There was a <strong>redirect URI mismatch</strong> error when connecting to YouTube. To fix this:
+                    <strong>Redirect URI Mismatch Error:</strong> The callback URL in your Google Cloud Console doesn't match what our app is expecting.
                   </p>
                   <ol className="list-decimal pl-5 mb-2 space-y-1">
                     <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline text-red-600 hover:text-red-800">Google Cloud Console</a></li>
                     <li>Open your OAuth 2.0 Client ID settings</li>
-                    <li>Under "Authorized redirect URIs", add the callback URL shown in your browser console</li>
-                    <li>Save changes and try connecting again</li>
+                    <li>Under "Authorized redirect URIs", add <strong>all</strong> of the callback URLs shown when you click the button below</li>
+                    <li>Save changes and wait 5 minutes for Google to update</li>
+                    <li>Try connecting again</li>
                   </ol>
-                  <p className="text-xs mt-2">This is a common configuration issue and doesn&apos;t indicate a problem with your account.</p>
+                  <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200 mt-2 mb-2">
+                    <p className="text-sm font-medium">Common issues:</p>
+                    <ul className="list-disc pl-5 text-sm">
+                      <li>You must add <strong>both</strong> the /callback/youtube and /callback/google URLs</li>
+                      <li>Make sure there are no trailing slashes or extra spaces</li>
+                      <li>URL must match exactly, including http/https and domain name</li>
+                      <li>Changes may take 5+ minutes to take effect at Google</li>
+                    </ul>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      // Safely log the callback URL to the console
+                      // Safely log the callback URL to the console and show to user
                       if (typeof window !== 'undefined') {
-                        // Get the callback URL from our utility function
-                        const callbackUrl = `${window.location.origin}/api/auth/callback/youtube`;
-                        console.log('Add this URL to Google Cloud Console:', callbackUrl);
+                        // Get both callback URLs
+                        const youtubeCallbackUrl = `${window.location.origin}/api/auth/callback/youtube`;
+                        const googleCallbackUrl = `${window.location.origin}/api/auth/callback/google`;
                         
-                        // Also show a helpful modal/alert for users who don't have console open
-                        alert(`Add this URL to your Google Cloud Console redirects:\n\n${callbackUrl}\n\nNOTE: After adding, wait a few minutes for Google to update before trying again.`);
+                        // Log to console for developers
+                        console.log('Add BOTH of these URLs to Google Cloud Console:');
+                        console.log('1.', youtubeCallbackUrl);
+                        console.log('2.', googleCallbackUrl);
                         
-                        // Also log the Google callback URL as a backup
-                        console.log('If you still have issues, also try adding:', `${window.location.origin}/api/auth/callback/google`);
+                        // Show alert with both URLs for users
+                        alert(`Add BOTH of these URLs to your Google Cloud Console redirects:\n\n1. ${youtubeCallbackUrl}\n\n2. ${googleCallbackUrl}\n\nNOTE: After adding, wait at least 5 minutes for Google to update before trying again.`);
                       }
                     }}
-                    className="mt-2"
+                    className="mt-2 w-full"
                   >
-                    Show Callback URL
+                    Show Required Callback URLs
                   </Button>
                 </AlertDescription>
               </Alert>

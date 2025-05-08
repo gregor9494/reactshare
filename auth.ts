@@ -140,6 +140,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Log the authentication provider to help with debugging
       console.log(`[Auth] Processing sign-in with provider: ${account?.provider}`);
       console.log(`[Auth] Available scopes: ${account?.scope}`);
+      console.log(`[Auth] OAuth user data:`, JSON.stringify({ id: user?.id, email: user?.email }));
+
+      // For account linking, we need the ID of the user ALREADY LOGGED INTO YOUR APP.
+      // The `user` object passed to signIn is from the OAuth provider and might be different.
+      const currentAppSession = await auth(); // Get current application session
+      const appUserId = currentAppSession?.user?.id;
+      
+      // Define account linking mode - a crucial distinction
+      const isAccountLinking = Boolean(currentAppSession?.user?.id);
+      console.log(`[Auth] Is this account linking? ${isAccountLinking}, App user ID: ${appUserId || 'none'}`);
+      
+      // If this is account linking, store it in a custom property
+      if (isAccountLinking && account) {
+        console.log(`[Auth] This is account linking for app user ${appUserId}`);
+        // We'll use this information in the JWT callback
+        (user as any).isAccountLinking = true;
+        (user as any).originalAppUserId = appUserId;
+      }
       
       // Handle Google or YouTube auth (explicit YouTube provider)
       if ((account?.provider === 'google' || account?.provider === 'youtube') && account.access_token) {
@@ -155,34 +173,62 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           
           console.log(`[Auth] Is YouTube authentication: ${isYouTubeAuth}`);
           
-          if (isYouTubeAuth && user?.id) {
+          if (isYouTubeAuth && appUserId) { // Use appUserId for linking
+            console.log(`[Auth] Linking YouTube account to existing app user: ${appUserId}`);
+            console.log(`[Auth] OAuth profile user ID from provider: ${user?.id}, email: ${profile?.email}`);
+
             // Store YouTube OAuth tokens with service role for database access
             const serviceClient = createClient(
               supabaseUrl as string,
               process.env.SUPABASE_SERVICE_ROLE_KEY as string
             );
             
+            // The database trigger 'on_auth_user_created' handles new user creation in public.users
+            // if the OAuth user (user.id) is signing up for the first time.
+            // For account linking, appUserId should already exist in public.users.
+            console.log(`[YouTube Auth] App user ${appUserId} should exist due to prior login/signup.`);
+            console.log(`[YouTube Auth] If OAuth user ${user?.id} is new, DB trigger will handle their public.users entry.`);
+
             // Get user's YouTube channel data
             const headers = {
               Authorization: `Bearer ${account.access_token}`
             };
             
             try {
+              console.log('[YouTube Auth] Fetching channel data with token');
               const youtubeResponse = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
                 headers
               });
               
+              // Log full response for debugging
+              const responseStatus = youtubeResponse.status;
               const youtubeData = await youtubeResponse.json();
+              console.log(`[YouTube Auth] Channel API response status: ${responseStatus}`);
+              
+              if (!youtubeResponse.ok) {
+                console.error('[YouTube Auth] Error fetching channel data:', youtubeData);
+                throw new Error(`YouTube API error: ${youtubeData.error?.message || 'Unknown API error'}`);
+              }
+              
+              console.log('[YouTube Auth] Channels data:', JSON.stringify(youtubeData));
               const channel = youtubeData.items?.[0];
               
               if (channel) {
+                console.log(`[YouTube Auth] Found channel: ${channel.id} - ${channel.snippet?.title}`);
                 // Check if this social account already exists
-                const { data: existingAccount } = await serviceClient
+                console.log(`[YouTube Auth] Checking for existing account with user_id: ${appUserId}, provider: youtube`);
+                const { data: existingAccount, error: existingError } = await serviceClient
                   .from('social_accounts')
                   .select()
-                  .eq('user_id', user.id)
+                  .eq('user_id', appUserId) // Use appUserId
                   .eq('provider', 'youtube')
                   .single();
+                
+                if (existingError && existingError.code !== 'PGRST116') {
+                  console.error('[YouTube Auth] Error checking for existing account:', existingError);
+                } else {
+                  console.log(`[YouTube Auth] Existing account found: ${existingAccount ? 'Yes' : 'No'}`);
+                }
                 
                 const profileData = {
                   id: channel.id,
@@ -193,7 +239,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 };
                 
                 const socialAccountData = {
-                  user_id: user.id,
+                  user_id: appUserId, // Use appUserId
                   provider: 'youtube',
                   provider_account_id: channel.id,
                   provider_username: channel.snippet?.title,
@@ -206,17 +252,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                   last_sync_at: new Date().toISOString()
                 };
                 
+                console.log(`[YouTube Auth] Preparing to ${existingAccount ? 'update' : 'insert'} YouTube account`);
+                
                 if (existingAccount) {
                   // Update existing account
-                  await serviceClient
+                  const { error: updateError } = await serviceClient
                     .from('social_accounts')
                     .update(socialAccountData)
                     .eq('id', existingAccount.id);
+                  
+                  if (updateError) {
+                    console.error('[YouTube Auth] Error updating social account:', updateError);
+                  } else {
+                    console.log(`[YouTube Auth] Successfully updated YouTube account ${existingAccount.id}`);
+                  }
                 } else {
                   // Insert new account
-                  await serviceClient
+                  const { data: insertData, error: insertError } = await serviceClient
                     .from('social_accounts')
-                    .insert([socialAccountData]);
+                    .insert([socialAccountData])
+                    .select();
+                  
+                  if (insertError) {
+                    console.error('[YouTube Auth] Error inserting social account:', insertError);
+                  } else {
+                    console.log(`[YouTube Auth] Successfully inserted YouTube account ${insertData?.[0]?.id}`);
+                  }
                 }
               }
             } catch (error) {
@@ -231,8 +292,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       
       // Handle TikTok auth
-      if (account?.provider === 'tiktok' && account.access_token && user?.id) {
+      // Ensure appUserId is available for linking TikTok account
+      if (account?.provider === 'tiktok' && account.access_token && appUserId) {
         try {
+          console.log(`[Auth] Linking TikTok account to existing app user: ${appUserId}`);
+          console.log(`[Auth] OAuth profile user ID from TikTok provider: ${user?.id}, email: ${profile?.email}`);
           // Store TikTok OAuth tokens with service role for database access
           const serviceClient = createClient(
             supabaseUrl as string,
@@ -258,7 +322,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               const { data: existingAccount } = await serviceClient
                 .from('social_accounts')
                 .select()
-                .eq('user_id', user.id)
+                .eq('user_id', appUserId) // Use appUserId
                 .eq('provider', 'tiktok')
                 .single();
               
@@ -273,7 +337,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               };
               
               const socialAccountData = {
-                user_id: user.id,
+                user_id: appUserId, // Use appUserId
                 provider: 'tiktok',
                 provider_account_id: userInfo.open_id,
                 provider_username: userInfo.display_name,
@@ -309,21 +373,71 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
       
-      // Always return true to allow sign-in
+      // For account linking operations, we still return true to allow the flow
+      // But we've stored the currentAppSession.user.id for reference
+      // The session integrity will be preserved in the jwt/session callbacks
+      if (account && currentAppSession?.user?.id) {
+        console.log(`[Auth] Account linking detected for user: ${currentAppSession.user.id}`);
+        // Store the original user ID in a global var or context that the JWT callback can access
+        // But we can't do that easily in this architecture
+      }
+      
+      // Always return true to allow the sign-in process to continue
       return true;
     },
 
     // Add user ID from Supabase to the JWT token
-    async jwt({ token, user, account }) {
-      if (user) { // User object is available on initial sign in
+    async jwt({ token, user, account, trigger }) {
+      console.log(`[JWT] Processing token, trigger: ${trigger}`);
+      
+      // Check if this is a social account linking operation
+      // The definitive way to detect account linking is through the custom property we set
+      const isAccountLinking = (user as any)?.isAccountLinking === true;
+      const originalAppUserId = (user as any)?.originalAppUserId;
+      
+      if (isAccountLinking && originalAppUserId) {
+        // This is account linking - OVERRIDE the OAuth user.id with the original app user ID
+        console.log(`[JWT] Account linking confirmed. Using original app user ID ${originalAppUserId} instead of OAuth user ID ${user.id}`);
+        // Force the token to use the original app user ID
+        token.id = originalAppUserId;
+        
+        // Store OAuth provider info but preserve the original token.id
+        if (account?.provider) {
+          // Type safe way to handle the custom property
+          const linkedProviders = token.linkedProviders as string[] || [];
+          if (!linkedProviders.includes(account.provider)) {
+            linkedProviders.push(account.provider);
+          }
+          token.linkedProviders = linkedProviders;
+          
+          // Add a flag that this is a linked account (for UI purposes)
+          token.hasLinkedAccounts = true;
+        }
+      } else if (user) {
+        // Normal sign-in flow (not account linking)
+        console.log(`[JWT] Regular sign-in. Setting token.id to user.id: ${user.id}`);
         token.id = user.id;
       }
       
+      // Log the resulting token ID to confirm our logic worked
+      console.log(`[JWT] Final token.id value: ${token.id}`);
+      
       // Add OAuth tokens to token if available
       if (account) {
+        console.log(`[JWT] Setting token data for provider: ${account.provider}`);
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.provider = account.provider;
+        token.expires_at = account.expires_at;
+        
+        // Special handling for YouTube provider
+        if (account.provider === 'youtube' ||
+            (account.provider === 'google' && account.scope?.includes('youtube'))) {
+          console.log('[JWT] Setting YouTube-specific token data');
+          token.youtubeAccessToken = account.access_token;
+          token.youtubeRefreshToken = account.refresh_token;
+          token.youtubeTokenExpires = account.expires_at;
+        }
       }
       
       return token;
@@ -332,10 +446,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // Add user ID from token to the session object
     async session({ session, token }) {
       if (session.user && token.id) {
+        console.log(`[Session] Setting session user ID to token ID: ${token.id}`);
         session.user.id = token.id as string; // Add id to session user
+        
+        // If token has linked accounts flag, add it to the session
+        if (token.hasLinkedAccounts) {
+          (session.user as any).hasLinkedAccounts = true;
+        }
+        
+        // If token has linked providers, add them to the session
+        if (token.linkedProviders) {
+          (session.user as any).linkedProviders = token.linkedProviders;
+        }
+        
         // Add provider info to session if available
         if (token.provider) {
           (session.user as any).provider = token.provider;
+        }
+        
+        // Add YouTube tokens to the session
+        if (token.youtubeAccessToken) {
+          console.log('[Session] Adding YouTube token data to session');
+          (session.user as any).youtubeAccessToken = token.youtubeAccessToken;
+          (session.user as any).youtubeRefreshToken = token.youtubeRefreshToken;
+          (session.user as any).youtubeTokenExpires = token.youtubeTokenExpires;
+          (session.user as any).hasYouTubeAccess = true;
         }
       }
       return session;

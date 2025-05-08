@@ -30,15 +30,29 @@ export function getExpectedCallbackUrl(provider = 'youtube'): string {
  */
 export function logOAuthDebugInfo(provider = 'youtube'): string {
   const expectedCallbackUrl = getExpectedCallbackUrl(provider);
+  const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXTAUTH_URL || '';
+  
+  // List all possible callback URLs that should be added to Google Console
+  const callbackUrls = [
+    `${origin}/api/auth/callback/${provider}`,
+    `${origin}/api/auth/callback/google`,
+    // Add localhost variants if in development
+    origin.includes('localhost') ? `http://localhost:3000/api/auth/callback/${provider}` : null,
+    origin.includes('localhost') ? `http://localhost:3000/api/auth/callback/google` : null
+  ].filter(Boolean); // Remove null values
   
   console.log('=== OAuth Debug Information ===');
   console.log(`Provider: ${provider}`);
-  console.log(`Expected callback URL: ${expectedCallbackUrl}`);
+  console.log(`Primary callback URL: ${expectedCallbackUrl}`);
   console.log(`NEXTAUTH_URL env: ${process.env.NEXTAUTH_URL || 'Not set'}`);
   
   if (typeof window !== 'undefined') {
     console.log(`Window origin: ${window.location.origin}`);
     console.log(`Current URL: ${window.location.href}`);
+    console.log(`\nALL POSSIBLE REDIRECT URIS TO ADD IN GOOGLE CLOUD CONSOLE:`);
+    callbackUrls.forEach((url, index) => {
+      console.log(`${index + 1}. ${url}`);
+    });
   }
   
   console.log('=== End OAuth Debug Info ===');

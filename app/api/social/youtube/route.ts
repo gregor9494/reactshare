@@ -13,6 +13,63 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
+ * Ensures that a user exists in the database
+ * This prevents foreign key constraint errors when working with social accounts
+ */
+async function ensureUserExists(userId: string): Promise<boolean> {
+  try {
+    // Check if the user exists in our users table
+    const { data: existingUser, error: userCheckError } = await serviceClient
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single();
+      
+    if (userCheckError && userCheckError.code !== 'PGRST116') {
+      console.error('[YouTube API] Error checking for existing user:', userCheckError);
+    }
+    
+    if (!existingUser) {
+      console.log(`[YouTube API] User ${userId} doesn't exist in users table, creating...`);
+      
+      // Get user information from auth system
+      const { data: userData, error: userDataError } = await serviceClient.auth.admin.getUserById(userId);
+      
+      if (userDataError) {
+        console.error('[YouTube API] Error fetching user data:', userDataError);
+        return false;
+      }
+      
+      const userEmail = userData?.user?.email;
+      const userName = userData?.user?.user_metadata?.name || userEmail?.split('@')[0] || 'User';
+      
+      // Create a new user record if it doesn't exist
+      const { error: userCreateError } = await serviceClient
+        .from('users')
+        .insert([{
+          id: userId,
+          email: userEmail,
+          name: userName,
+          created_at: new Date().toISOString()
+        }]);
+        
+      if (userCreateError) {
+        console.error('[YouTube API] Error creating user:', userCreateError);
+        return false;
+      } else {
+        console.log(`[YouTube API] Successfully created user ${userId}`);
+        return true;
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('[YouTube API] User verification error:', error);
+    return false;
+  }
+}
+
+/**
  * GET /api/social/youtube
  * Returns the user's connected YouTube account details
  */
@@ -27,6 +84,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Ensure the user exists in the database before proceeding
+    const userExists = await ensureUserExists(session.user.id);
+    if (!userExists) {
+      console.error(`[YouTube API] User ${session.user.id} verification failed`);
+      return NextResponse.json(
+        { error: 'Failed to verify user account' },
+        { status: 500 }
+      );
+    }
+    
     // Get the user's YouTube account from the database
     const { data: account, error } = await serviceClient
       .from('social_accounts')
@@ -86,6 +153,16 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
+    // Ensure the user exists in the database before proceeding
+    const userExists = await ensureUserExists(session.user.id);
+    if (!userExists) {
+      console.error(`[YouTube API] User ${session.user.id} verification failed`);
+      return NextResponse.json(
+        { error: 'Failed to verify user account' },
+        { status: 500 }
+      );
+    }
+    
     // Delete the YouTube account from the database
     const { error } = await serviceClient
       .from('social_accounts')
@@ -126,6 +203,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Ensure the user exists in the database before proceeding
+    const userExists = await ensureUserExists(session.user.id);
+    if (!userExists) {
+      console.error(`[YouTube API] User ${session.user.id} verification failed during token refresh`);
+      return NextResponse.json(
+        { error: 'Failed to verify user account' },
+        { status: 500 }
+      );
+    }
+    
     // Get the account with tokens
     const { data: account, error: fetchError } = await serviceClient
       .from('social_accounts')
