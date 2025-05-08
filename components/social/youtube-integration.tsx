@@ -1,9 +1,10 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { checkForOAuthErrors, logOAuthDebugInfo } from '@/lib/oauth-debug'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,6 +18,24 @@ export function YouTubeIntegration() {
   const { youtubeAccount, channelData, isLoading, error, refreshChannel } = useYouTubeAccount()
   const { connectToYouTube, isConnecting } = useYouTubeOAuth()
   const [activeTab, setActiveTab] = useState<string>('overview')
+  const [redirectUriError, setRedirectUriError] = useState(false)
+  
+  // Check for auth errors using our debug utilities
+  useEffect(() => {
+    const oauthError = checkForOAuthErrors();
+    
+    if (oauthError &&
+        oauthError.provider === 'youtube' &&
+        (oauthError.error.includes('redirect_uri_mismatch') ||
+         oauthError.description.includes('redirect_uri_mismatch'))) {
+      console.error('YouTube OAuth Error:', oauthError);
+      setRedirectUriError(true);
+      
+      // Log additional debugging information to help diagnose the issue
+      const expectedCallbackUrl = logOAuthDebugInfo();
+      console.info('Expected callback URL for Google Console:', expectedCallbackUrl);
+    }
+  }, []);
 
   // Format subscriber count with commas
   const formatNumber = (num: number) => {
@@ -54,9 +73,49 @@ export function YouTubeIntegration() {
               <Youtube className="h-8 w-8 text-red-600" />
             </div>
             <h3 className="mb-2 text-xl font-medium">Connect YouTube</h3>
-            <p className="mb-6 text-sm text-muted-foreground">
+            <p className="mb-4 text-sm text-muted-foreground">
               Connect your YouTube account to publish reactions directly to your channel
             </p>
+            
+            {redirectUriError && (
+              <Alert className="mb-4 border-red-200 bg-red-50 text-red-800">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>YouTube OAuth Configuration Error</AlertTitle>
+                <AlertDescription className="text-left">
+                  <p className="mb-2">
+                    There was a <strong>redirect URI mismatch</strong> error when connecting to YouTube. To fix this:
+                  </p>
+                  <ol className="list-decimal pl-5 mb-2 space-y-1">
+                    <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline text-red-600 hover:text-red-800">Google Cloud Console</a></li>
+                    <li>Open your OAuth 2.0 Client ID settings</li>
+                    <li>Under "Authorized redirect URIs", add the callback URL shown in your browser console</li>
+                    <li>Save changes and try connecting again</li>
+                  </ol>
+                  <p className="text-xs mt-2">This is a common configuration issue and doesn&apos;t indicate a problem with your account.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Safely log the callback URL to the console
+                      if (typeof window !== 'undefined') {
+                        // Get the callback URL from our utility function
+                        const callbackUrl = `${window.location.origin}/api/auth/callback/youtube`;
+                        console.log('Add this URL to Google Cloud Console:', callbackUrl);
+                        
+                        // Also show a helpful modal/alert for users who don't have console open
+                        alert(`Add this URL to your Google Cloud Console redirects:\n\n${callbackUrl}\n\nNOTE: After adding, wait a few minutes for Google to update before trying again.`);
+                        
+                        // Also log the Google callback URL as a backup
+                        console.log('If you still have issues, also try adding:', `${window.location.origin}/api/auth/callback/google`);
+                      }
+                    }}
+                    className="mt-2"
+                  >
+                    Show Callback URL
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
             <Button 
               onClick={connectToYouTube} 
               disabled={isConnecting}

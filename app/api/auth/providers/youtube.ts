@@ -14,7 +14,7 @@ import { SocialProviderConfig, OAuthScopes } from '@/lib/types';
 export const YouTubeProvider: SocialProviderConfig = {
   id: 'youtube',
   name: 'YouTube',
-  authProvider: 'google',
+  authProvider: 'youtube', // Changed from 'google' to match our custom provider ID
   color: 'text-red-600',
   icon: 'Youtube',
   isAvailable: true,
@@ -42,6 +42,20 @@ export const YouTubeProvider: SocialProviderConfig = {
     'estimatedRevenue',
     'subscribersGained'
   ],
+  // IMPORTANT: The redirect_uri_mismatch error happens when the callback URL is not properly
+  // configured in Google Cloud Console. The callback URL must be EXACTLY:
+  //
+  // {ORIGIN}/api/auth/callback/youtube
+  //
+  // For example: https://your-domain.com/api/auth/callback/youtube or http://localhost:3000/api/auth/callback/youtube
+  //
+  // To fix this error:
+  // 1. Go to https://console.cloud.google.com/apis/credentials
+  // 2. Find your OAuth 2.0 Client ID and click Edit
+  // 3. Add the exact callback URL to "Authorized redirect URIs"
+  // 4. Save changes
+  //
+  // The value below is just the internal redirect after successful authentication:
   authCallbackUrl: '/dashboard/social',
   features: {
     upload: true,

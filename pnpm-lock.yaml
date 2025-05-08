@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@auth/supabase-adapter':
+        specifier: ^1.9.0
+        version: 1.9.0(@supabase/supabase-js@2.49.4)
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.56.2(react@19.1.0))
@@ -215,6 +218,11 @@ packages:
         optional: true
       nodemailer:
         optional: true
+
+  '@auth/supabase-adapter@1.9.0':
+    resolution: {integrity: sha512-8yEepGGRq9YibwVf8MNqpcN6ohxv3xawM71RVKYm87quiDDZFPv8KSCLUe7XOwJf+PsPCCimSMiKjRuOLL8h0Q==}
+    peerDependencies:
+      '@supabase/supabase-js': ^2.43.1
 
   '@babel/runtime@7.27.1':
     resolution: {integrity: sha512-1x3D2xEk2fRo3PAhwQwu5UubzgiVWSXTBfWpVd2Mx2AzRqJuDJCsgaDVZ7HB5iGzDW1Hl1sWN2mFyKjmR9uAog==}
@@ -2035,6 +2043,15 @@ snapshots:
       oauth4webapi: 3.5.0
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
+
+  '@auth/supabase-adapter@1.9.0(@supabase/supabase-js@2.49.4)':
+    dependencies:
+      '@auth/core': 0.39.0
+      '@supabase/supabase-js': 2.49.4
+    transitivePeerDependencies:
+      - '@simplewebauthn/browser'
+      - '@simplewebauthn/server'
+      - nodemailer
 
   '@babel/runtime@7.27.1': {}
 

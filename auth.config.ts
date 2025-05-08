@@ -8,6 +8,8 @@ import type { NextAuthConfig } from 'next-auth';
  * Read more: https://nextjs.authjs.dev/getting-started/installation
  */
 export const authConfig = {
+  // Define the callback domain and path for OAuth providers
+  trustHost: true,
   // Specify providers here if needed for edge compatibility,
   // otherwise, they can be defined solely in `auth.ts`.
   providers: [

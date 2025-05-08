@@ -90,6 +90,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       },
     }),
+    // Custom YouTube provider with explicit endpoint configuration
+    {
+      id: "youtube",
+      name: "YouTube",
+      type: "oauth",
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Explicitly define OAuth endpoints instead of using wellKnown
+      authorization: {
+        url: "https://accounts.google.com/o/oauth2/v2/auth",
+        params: {
+          scope: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/youtube.upload",
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code",
+        }
+      },
+      token: {
+        url: "https://oauth2.googleapis.com/token",
+      },
+      userinfo: {
+        url: "https://www.googleapis.com/oauth2/v3/userinfo",
+      },
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        }
+      },
+    },
     // Add TikTok OAuth provider
     getTikTokOAuthConfig(),
     // Add other providers like Facebook, etc. here if needed
@@ -105,14 +137,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     // Handle OAuth flow and save tokens
     async signIn({ user, account, profile }) {
-      // Handle Google auth
-      if (account?.provider === 'google' && account.access_token) {
+      // Log the authentication provider to help with debugging
+      console.log(`[Auth] Processing sign-in with provider: ${account?.provider}`);
+      console.log(`[Auth] Available scopes: ${account?.scope}`);
+      
+      // Handle Google or YouTube auth (explicit YouTube provider)
+      if ((account?.provider === 'google' || account?.provider === 'youtube') && account.access_token) {
         try {
-          // For Google sign-in, we first need to check if OAuth scopes include YouTube
-          const hasYoutubeScope = account.scope?.includes('youtube') ||
-                                 account.scope?.includes('https://www.googleapis.com/auth/youtube.readonly');
+          // Determine if this is a YouTube authentication
+          // For direct YouTube provider or Google with YouTube scopes
+          const isYouTubeAuth = account.provider === 'youtube' ||
+                               (account.provider === 'google' && (
+                                 account.scope?.includes('youtube') ||
+                                 account.scope?.includes('https://www.googleapis.com/auth/youtube.readonly') ||
+                                 account.scope?.includes('https://www.googleapis.com/auth/youtube.force-ssl')
+                               ));
           
-          if (hasYoutubeScope && user?.id) {
+          console.log(`[Auth] Is YouTube authentication: ${isYouTubeAuth}`);
+          
+          if (isYouTubeAuth && user?.id) {
             // Store YouTube OAuth tokens with service role for database access
             const serviceClient = createClient(
               supabaseUrl as string,
