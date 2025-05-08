@@ -54,7 +54,8 @@ export default function useSocialAccounts(): UseSocialAccountsResult {
       // Each provider might have a different refresh endpoint
       const response = await fetch(`/api/social/${account.provider}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: accountId })
       });
 
       if (!response.ok) {

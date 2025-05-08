@@ -275,7 +275,6 @@ export function ConnectedAccounts() {
 
       {/* Available platforms to connect */}
       {platforms
-        .filter(platform => !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
         .filter(platform => platform.isAvailable)
         .map((platform, idx) => (
           <div key={`platform-${idx}`} className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
@@ -309,9 +308,7 @@ export function ConnectedAccounts() {
           <h3 className="mt-4 text-lg font-medium">Connect a new account</h3>
           <p className="mt-2 text-sm text-muted-foreground">Add more social media accounts to expand your reach</p>
           <div className="mt-4 flex flex-wrap gap-2 justify-center">
-            {platforms
-              .filter(platform => !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
-              .map((platform, idx) => (
+            {platforms.map((platform, idx) => (
                 <Button
                   key={`connect-${idx}`}
                   onClick={platform.connectAction}

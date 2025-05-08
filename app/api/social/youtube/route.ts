@@ -144,6 +144,7 @@ export async function GET(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   const session = await auth();
+  const { id } = await request.json();
   
   if (!session?.user?.id) {
     return NextResponse.json(
@@ -167,6 +168,7 @@ export async function DELETE(request: NextRequest) {
     const { error } = await serviceClient
       .from('social_accounts')
       .delete()
+      .eq('id', id)
       .eq('user_id', session.user.id)
       .eq('provider', 'youtube');
 
@@ -194,6 +196,7 @@ export async function DELETE(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const session = await auth();
+  const { id } = await request.json();
   
   if (!session?.user?.id) {
     return NextResponse.json(
@@ -217,6 +220,7 @@ export async function POST(request: NextRequest) {
     const { data: account, error: fetchError } = await serviceClient
       .from('social_accounts')
       .select('*')
+      .eq('id', id)
       .eq('user_id', session.user.id)
       .eq('provider', 'youtube')
       .single();
