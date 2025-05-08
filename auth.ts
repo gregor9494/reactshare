@@ -157,6 +157,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // We'll use this information in the JWT callback
         (user as any).isAccountLinking = true;
         (user as any).originalAppUserId = appUserId;
+        (user as any).originalEmail = currentAppSession?.user?.email;
       }
       
       // Handle Google or YouTube auth (explicit YouTube provider)
@@ -400,6 +401,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         console.log(`[JWT] Account linking confirmed. Using original app user ID ${originalAppUserId} instead of OAuth user ID ${user.id}`);
         // Force the token to use the original app user ID
         token.id = originalAppUserId;
+        (token as any).originalEmail = (user as any).originalEmail;
         
         // Store OAuth provider info but preserve the original token.id
         if (account?.provider) {

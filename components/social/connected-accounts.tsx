@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import TikTok from "@/components/ui/icons/tiktok"
 import useSocialAccounts from "@/hooks/use-social-accounts"
+import useYouTubeOAuth from "@/hooks/use-youtube-oauth"
 
 type PlatformIconType = React.ComponentType<{ className?: string }>;
 
@@ -130,13 +131,16 @@ export function ConnectedAccounts() {
     }
   }
 
+  // OAuth hooks for linking
+  const { connectToYouTube, isConnecting: isConnectingYouTube } = useYouTubeOAuth();
+
   // Define available platforms and their connection methods
   const platforms: PlatformConfig[] = [
     {
       name: "YouTube",
       icon: Youtube,
       color: "text-red-600",
-      connectAction: () => signIn('google', { callbackUrl: '/dashboard/social' }),
+      connectAction: connectToYouTube,
       isAvailable: true
     },
     {
@@ -287,7 +291,12 @@ export function ConnectedAccounts() {
             </div>
 
             <div className="ml-auto">
-              <Button onClick={platform.connectAction}>Connect {platform.name}</Button>
+              <Button
+                onClick={platform.connectAction}
+                disabled={!platform.isAvailable || (platform.name === "YouTube" && isConnectingYouTube)}
+              >
+                Connect {platform.name}
+              </Button>
             </div>
           </div>
         ))}
