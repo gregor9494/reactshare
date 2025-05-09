@@ -29,10 +29,13 @@ interface VideoGridProps {
 export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
   const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [singleVideoToMove, setSingleVideoToMove] = useState<string | null>(null);
+  const [singleVideoToDelete, setSingleVideoToDelete] = useState<string | null>(null);
   const [downloadingVideos, setDownloadingVideos] = useState<Record<string, { status: string, progress?: number }>>({});
   
   // Function to open the move dialog for a single video
@@ -40,6 +43,13 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
     setSingleVideoToMove(videoId);
     setSelectedVideos([videoId]);
     setIsMoveDialogOpen(true);
+  };
+
+  // Function to open the delete dialog for a single video
+  const openDeleteDialogForVideo = (videoId: string) => {
+    setSingleVideoToDelete(videoId);
+    setSelectedVideos([videoId]);
+    setIsDeleteDialogOpen(true);
   };
   
   // Poll for download status of videos that are in processing/downloading/pending state
@@ -165,21 +175,13 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                 if (selectedVideos.length > 0) {
                   selectedVideos.forEach(id => {
                     const video = videos.find(v => v.id === id);
-                    // Prefer storage_path for direct download, otherwise use API endpoint
-                    if (video) {
-                      if (video.storage_path) {
-                        // Assuming storage_path is a publicly accessible URL or we need a signed URL
-                        // For simplicity, let's assume it's a direct link or needs an API endpoint
-                        // If Supabase storage, this would be:
-                        // const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-                        // const { data } = supabase.storage.from('source_videos_bucket_name').getPublicUrl(video.storage_path);
-                        // window.open(data.publicUrl, '_blank');
-                        // For now, let's use a generic download endpoint for source videos
-                        window.open(`/api/videos/download?id=${id}`, '_blank');
-                      } else {
-                        // Fallback if no direct storage_path, though 'completed' status should imply one
-                        window.open(`/api/videos/download?id=${id}`, '_blank');
-                      }
+                    // Only download completed videos with storage_path
+                    if (video && video.storage_path && video.status === 'completed') {
+                      // Use the new download-file endpoint that properly triggers file download
+                      window.open(`/api/videos/download-file?id=${id}`, '_blank');
+                    } else if (video) {
+                      // Show a toast for videos that can't be downloaded
+                      toast.error(`Video "${video.title || 'Untitled'}" is not ready for download yet.`);
                     }
                   });
                 }
@@ -189,8 +191,18 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
               <Download className="mr-2 h-4 w-4" />
               Download Selected
             </Button>
-            <Button variant="destructive" size="sm" disabled={selectedVideos.length === 0}>
-              Delete Selected {/* Placeholder */}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (selectedVideos.length > 0) {
+                  setIsDeleteDialogOpen(true);
+                }
+              }}
+              disabled={selectedVideos.length === 0}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Selected
             </Button>
           </div>
         </div>
@@ -346,7 +358,7 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     <DropdownMenuItem
                       onClick={() => {
                         if (video.storage_path && video.status === 'completed') {
-                          window.open(`/api/videos/download?id=${video.id}`, '_blank');
+                          window.open(`/api/videos/download-file?id=${video.id}`, '_blank');
                         }
                       }}
                       disabled={!video.storage_path || video.status !== 'completed'}
@@ -369,7 +381,10 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                       View Analytics
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-destructive" disabled> {/* Placeholder */}
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => openDeleteDialogForVideo(video.id)}
+                    >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete Video
                     </DropdownMenuItem>
@@ -463,6 +478,69 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
               disabled={isMoving}
             >
               {isMoving ? 'Moving...' : 'Move Videos'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {singleVideoToDelete ?
+                "Delete video" :
+                `Delete ${selectedVideos.length} video${selectedVideos.length !== 1 ? 's' : ''}`
+              }
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-muted-foreground">
+              Are you sure you want to delete {selectedVideos.length === 1 ? "this video" : "these videos"}? This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                setIsDeleting(true);
+                try {
+                  const response = await fetch('/api/videos/delete', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      videoIds: selectedVideos,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to delete videos');
+                  }
+
+                  const result = await response.json();
+                  toast.success(result.message || `Successfully deleted ${selectedVideos.length} video${selectedVideos.length !== 1 ? 's' : ''}`);
+                  setSelectedVideos([]);
+                  setSingleVideoToDelete(null);
+                  setIsDeleteDialogOpen(false);
+                  
+                  // Refresh the page to show updated videos
+                  window.location.reload();
+                } catch (error: any) {
+                  console.error('Error deleting videos:', error);
+                  toast.error(`Failed to delete videos: ${error.message}`);
+                } finally {
+                  setIsDeleting(false);
+                }
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

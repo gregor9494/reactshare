@@ -1,4 +1,4 @@
-="use client"; // Make this a client component
+"use client"; // Make this a client component
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
