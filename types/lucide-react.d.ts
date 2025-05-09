@@ -45,6 +45,9 @@ declare module 'lucide-react' {
   export const Type: Icon;
   export const User: Icon;
   export const Youtube: Icon;
+  export const Cloud: Icon;
+  export const Home: Icon;
+  export const Users: Icon;
 }
 
 declare module 'date-fns' {
