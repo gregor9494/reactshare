@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { BarChart3, Camera, Clock, Cloud, Home, Settings, Share2, Users } from "lucide-react"
+import { BarChart3, Camera, Clock, Cloud, Home, Settings, Share2, Users, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function DashboardNav() {
@@ -16,6 +16,12 @@ export function DashboardNav() {
           <Button variant="ghost" className="w-full justify-start">
             <Camera className="mr-2 h-4 w-4" />
             Create Reaction
+          </Button>
+        </Link>
+        <Link href="/dashboard/post">
+          <Button variant="ghost" className="w-full justify-start">
+            <Plus className="mr-2 h-4 w-4" />
+            Post
           </Button>
         </Link>
         <Link href="/dashboard/library">
