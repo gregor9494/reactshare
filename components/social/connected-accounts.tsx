@@ -53,7 +53,7 @@ export function ConnectedAccounts() {
     refreshAccount,
     toggleAccountStatus,
     disconnectAccount,
-    refetch
+    refetchSocialAccounts // Changed from refetch to refetchSocialAccounts
   } = useSocialAccounts();
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
@@ -114,17 +114,9 @@ export function ConnectedAccounts() {
     try {
       setRefreshingAll(true);
       
-      // Refresh account data
-      const accountsResponse = await fetch('/api/social', {
-        method: 'GET',
-        cache: 'no-store'
-      });
+      // Removed redundant fetch for /api/social, refetch() below will handle it.
       
-      if (!accountsResponse.ok) {
-        throw new Error(`Failed to refresh accounts: ${accountsResponse.statusText}`);
-      }
-      
-      // Also refresh analytics endpoints to get fresh data
+      // Refresh analytics endpoints to get fresh data
       await Promise.allSettled([
         fetch('/api/social/youtube/analytics', {
           method: 'GET',
@@ -139,7 +131,7 @@ export function ConnectedAccounts() {
       ]);
       
       // Refresh the account data
-      refetch();
+      await refetchSocialAccounts(); // Call the exposed refetch function
       
       // Add success message
       toast({
@@ -287,12 +279,7 @@ export function ConnectedAccounts() {
                 <h3 className="font-medium">{account.provider.charAt(0).toUpperCase() + account.provider.slice(1)}</h3>
                 <p className="text-sm text-muted-foreground">
                   {account.provider_username ? `@${account.provider_username}` : 'No username'}
-                  {account.dataSource === 'real_api' && (
-                    <span className="ml-2 text-xs inline-flex items-center text-green-600">
-                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></span>
-                      Real API
-                    </span>
-                  )}
+                  {/* Removed account.dataSource check as it's not part of SocialAccount type */}
                 </p>
               </div>
             </div>
@@ -366,9 +353,9 @@ export function ConnectedAccounts() {
         )
       })}
 
-      {/* Available platforms to connect */}
+      {/* Available platforms to connect - show only if available AND not already connected */}
       {platforms
-        .filter(platform => platform.isAvailable)
+        .filter(platform => platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
         .map((platform, idx) => (
           <div key={`platform-${idx}`} className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
@@ -385,7 +372,7 @@ export function ConnectedAccounts() {
             <div className="ml-auto">
               <Button
                 onClick={platform.connectAction}
-                disabled={!platform.isAvailable || (platform.name === "YouTube" && isConnectingYouTube)}
+                disabled={!platform.isAvailable || accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) || (platform.name === "YouTube" && isConnectingYouTube)}
               >
                 Connect {platform.name}
               </Button>
@@ -405,14 +392,14 @@ export function ConnectedAccounts() {
                 <Button
                   key={`connect-${idx}`}
                   onClick={platform.connectAction}
-                  disabled={!platform.isAvailable}
-                  variant={platform.isAvailable ? "default" : "outline"}
+                  disabled={!platform.isAvailable || accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) || (platform.name === "YouTube" && isConnectingYouTube)}
+                  variant={platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) ? "default" : "outline"}
                   className="flex items-center gap-2"
                 >
                   {/* Use capitalized component syntax */}
                   {React.createElement(platform.icon, { className: "h-4 w-4" })}
-                  {platform.name}
-                  {!platform.isAvailable && " (Coming Soon)"}
+                  {accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) ? `${platform.name} (Connected)` : platform.name}
+                  {!platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) && " (Coming Soon)"}
                 </Button>
               ))}
           </div>

@@ -136,6 +136,13 @@ export function TopContent() {
         
         setDataSource(dataSourceStatus)
         
+        // Only use real data: if no real API data from YouTube or TikTok, exit early
+        if (dataSourceStatus.youtube !== 'real_api' && dataSourceStatus.tiktok !== 'real_api') {
+          setVideos([])
+          setIsLoading(false)
+          return
+        }
+        
         // Combine videos from both platforms
         let allVideos: Video[] = []
         

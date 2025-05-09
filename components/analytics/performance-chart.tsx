@@ -92,10 +92,10 @@ export function PerformanceChart() {
         let chartData: ChartDataPoint[] = [];
         
         // If we have YouTube time series data
-        const hasYoutubeTimeSeries = youtubeData?.dailyStats && Array.isArray(youtubeData.dailyStats) && youtubeData.dailyStats.length > 0;
+        const hasYoutubeTimeSeries = youtubeData?.source === 'real_api' && Array.isArray(youtubeData.dailyStats) && youtubeData.dailyStats.length > 0;
         
         // If we have TikTok time series data
-        const hasTikTokTimeSeries = tiktokData?.dailyStats && Array.isArray(tiktokData.dailyStats) && tiktokData.dailyStats.length > 0;
+        const hasTikTokTimeSeries = tiktokData?.source === 'real_api' && Array.isArray(tiktokData.dailyStats) && tiktokData.dailyStats.length > 0;
         
         if (hasYoutubeTimeSeries || hasTikTokTimeSeries) {
           // We have at least one source with time series data
@@ -178,91 +178,26 @@ export function PerformanceChart() {
             // Both accounts connected but only one has time series
             setChartCategories(["views", "engagement"]);
           }
-        } else if (youtubeAccount || tiktokAccount) {
-          // We have connected accounts but no time series data
-          // Create synthetic data based on connected platforms
-          chartData = generateFallbackTimeSeriesData(youtubeAccount !== undefined, tiktokAccount !== undefined);
         } else {
-          // No connected accounts - pure fallback
-          chartData = [
-            { date: "30 days ago", views: 2000, engagement: 200 },
-            { date: "25 days ago", views: 2500, engagement: 300 },
-            { date: "20 days ago", views: 3000, engagement: 400 },
-            { date: "15 days ago", views: 3200, engagement: 450 },
-            { date: "10 days ago", views: 3800, engagement: 500 },
-            { date: "5 days ago", views: 4200, engagement: 650 },
-            { date: "Today", views: 4500, engagement: 800 },
-          ];
-          
-          setChartCategories(["views", "engagement"]);
+          // No real time series data
+          setDataSource({ youtube: 'unavailable', tiktok: 'unavailable' });
+          setData([]);
+          return;
         }
         
         setData(chartData);
       } catch (err) {
         console.error("Error fetching performance data:", err);
-        setError("Failed to load performance data. Using fallback data instead.");
-        
-        // Use fallback data
-        setData([
-          { date: "30 days ago", views: 2000, engagement: 200 },
-          { date: "25 days ago", views: 2500, engagement: 300 },
-          { date: "20 days ago", views: 3000, engagement: 400 },
-          { date: "15 days ago", views: 3200, engagement: 450 },
-          { date: "10 days ago", views: 3800, engagement: 500 },
-          { date: "5 days ago", views: 4200, engagement: 650 },
-          { date: "Today", views: 4500, engagement: 800 },
-        ]);
-        
-        setDataSource({
-          youtube: 'fallback',
-          tiktok: 'fallback'
-        });
-        
-        setChartCategories(["views", "engagement"]);
+        setError("Failed to load performance data.");
+        setData([]);
+        setDataSource({ youtube: 'unavailable', tiktok: 'unavailable' });
       } finally {
         setIsLoading(false);
       }
     }
     
-    // Helper function to generate fallback time series data
-    function generateFallbackTimeSeriesData(hasYoutube: boolean, hasTikTok: boolean): ChartDataPoint[] {
-      const dates = [
-        "30 days ago", "25 days ago", "20 days ago", "15 days ago",
-        "10 days ago", "5 days ago", "Yesterday", "Today"
-      ];
-      
-      // Base values for each platform
-      const ytBase = { views: 1500, engagement: 150 };
-      const ttBase = { views: 2500, engagement: 350 };
-      
-      // Growth factors
-      const ytGrowth = 1.2;  // 20% growth per step
-      const ttGrowth = 1.15; // 15% growth per step
-      
-      return dates.map((date, index) => {
-        // Calculate platform values with growth applied
-        const ytViews = hasYoutube ? Math.round(ytBase.views * Math.pow(ytGrowth, index)) : 0;
-        const ytEngagement = hasYoutube ? Math.round(ytBase.engagement * Math.pow(ytGrowth, index)) : 0;
-        
-        const ttViews = hasTikTok ? Math.round(ttBase.views * Math.pow(ttGrowth, index)) : 0;
-        const ttEngagement = hasTikTok ? Math.round(ttBase.engagement * Math.pow(ttGrowth, index)) : 0;
-        
-        // Combined totals
-        const totalViews = ytViews + ttViews;
-        const totalEngagement = ytEngagement + ttEngagement;
-        
-        return {
-          date,
-          views: totalViews,
-          engagement: totalEngagement,
-          youtubeViews: ytViews,
-          tiktokViews: ttViews,
-          youtubeEngagement: ytEngagement,
-          tiktokEngagement: ttEngagement
-        };
-      });
-    }
-    
+    // End of fetchPerformanceData function
+
     if (!accountsLoading) {
       fetchPerformanceData();
     }
@@ -328,6 +263,14 @@ export function PerformanceChart() {
     return (
       <div className="h-[300px] w-full flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!isLoading && data.length === 0) {
+    return (
+      <div className="h-[300px] w-full flex items-center justify-center">
+        <p className="text-muted-foreground">No analytics data available yet.</p>
       </div>
     );
   }

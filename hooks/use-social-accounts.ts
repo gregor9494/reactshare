@@ -11,6 +11,7 @@ interface UseSocialAccountsResult {
   toggleAccountStatus: (accountId: string, enabled: boolean) => Promise<void>;
   disconnectAccount: (accountId: string, provider: string) => Promise<void>;
   getAccountByProvider: (provider: string) => SocialAccount | undefined;
+  refetchSocialAccounts: () => Promise<void>; // Added refetchSocialAccounts
 }
 
 export default function useSocialAccounts(): UseSocialAccountsResult {
@@ -133,6 +134,7 @@ export default function useSocialAccounts(): UseSocialAccountsResult {
     refreshAccount,
     toggleAccountStatus,
     disconnectAccount,
-    getAccountByProvider
+    getAccountByProvider,
+    refetchSocialAccounts: fetchAccounts // Expose fetchAccounts as refetchSocialAccounts
   };
 }

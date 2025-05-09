@@ -8,26 +8,30 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 // DashboardHeader and DashboardNav are provided by the layout
 import { OverviewMetrics } from "@/components/analytics/overview-metrics"
 import { PerformanceChart } from "@/components/analytics/performance-chart"
-import { PlatformBreakdown } from "@/components/analytics/platform-breakdown"
+import { PlatformBreakdown } from "../../../components/analytics/platform-breakdown" // Changed to relative path
 import { AudienceInsights } from "@/components/analytics/audience-insights"
 import { TopContent } from "@/components/analytics/top-content"
-import { PlatformAnalytics } from "@/components/analytics/platform-analytics"
-import { AlertCircle, Download, Calendar, RefreshCw } from "lucide-react"
+import { PlatformAnalytics } from "../../../components/analytics/platform-analytics"
+import { AlertTriangle, Download, Calendar, RefreshCw } from "lucide-react" // Changed to AlertTriangle
 import useSocialAccounts from "@/hooks/use-social-accounts"
 
 export default function AnalyticsPage() {
   const { accounts, isLoading: accountsLoading } = useSocialAccounts()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  // hasConnectedAccounts state is kept for the refresh button,
+  // but the alert will use a more direct derivation.
   const [hasConnectedAccounts, setHasConnectedAccounts] = useState(false)
 
-  // Check if there are any connected social accounts
   useEffect(() => {
-    if (accounts && accounts.length > 0) {
-      const activeAccounts = accounts.filter(account => account.status === 'active')
-      setHasConnectedAccounts(activeAccounts.length > 0)
+    // This effect primarily updates hasConnectedAccounts for the refresh button's disabled state.
+    if (accounts) { // Check if accounts is not undefined
+      const activeAccounts = accounts.filter(account => account.status === 'active');
+      setHasConnectedAccounts(activeAccounts.length > 0);
+    } else {
+      setHasConnectedAccounts(false); // Set to false if accounts is null/undefined
     }
-  }, [accounts])
+  }, [accounts]);
 
   // Handle refreshing all analytics data
   const handleRefreshAll = async () => {
@@ -111,15 +115,15 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {!hasConnectedAccounts && !accountsLoading && (
-        <Alert variant="warning" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
+      {!accountsLoading && (!accounts || accounts.filter(acc => acc.status === 'active').length === 0) && (
+        <Alert variant="default" className="mb-4 border-yellow-500/50 text-yellow-700 dark:border-yellow-500 [&>svg]:text-yellow-700"> {/* Changed to default and added warning-like styling */}
+          <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            You don't have any social accounts connected. Analytics will show sample data.{' '}
+            You don't have any social accounts connected.{' '}
             <a href="/dashboard/social" className="underline font-medium">
               Connect your accounts
             </a>{' '}
-            to see real performance data.
+            to start seeing analytics.
           </AlertDescription>
         </Alert>
       )}
@@ -139,7 +143,7 @@ export default function AnalyticsPage() {
               <TabsTrigger value="engagement">Engagement</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="overview" className="space-y-6 py-4">
+            <TabsContent value="overview" className="space-y-6 py-4" key={`overview-${lastRefreshed?.toISOString()}`}>
               <OverviewMetrics />
 
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
@@ -187,7 +191,7 @@ export default function AnalyticsPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="audience" className="py-4">
+            <TabsContent value="audience" className="py-4" key={`audience-${lastRefreshed?.toISOString()}`}>
               <Card>
                 <CardHeader>
                   <CardTitle>Audience Demographics</CardTitle>
@@ -201,7 +205,7 @@ export default function AnalyticsPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="content" className="py-4">
+            <TabsContent value="content" className="py-4" key={`content-${lastRefreshed?.toISOString()}`}>
               <Card>
                 <CardHeader>
                   <CardTitle>Content Performance</CardTitle>
@@ -215,11 +219,11 @@ export default function AnalyticsPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="platforms" className="py-4">
+            <TabsContent value="platforms" className="py-4" key={`platforms-${lastRefreshed?.toISOString()}`}>
               <PlatformAnalytics />
             </TabsContent>
 
-            <TabsContent value="engagement" className="py-4">
+            <TabsContent value="engagement" className="py-4" key={`engagement-${lastRefreshed?.toISOString()}`}>
               <Card>
                 <CardHeader>
                   <CardTitle>Engagement Metrics</CardTitle>

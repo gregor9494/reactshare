@@ -3,20 +3,30 @@
 import React, { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useToast } from "@/components/ui/use-toast" // Added useToast import
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RefreshCw, Loader2, AlertTriangle, Check } from 'lucide-react'
 import TikTokIcon from '@/components/ui/icons/tiktok'
-import TikTokAnalytics from './tiktok-analytics'
+import TikTokAccountAnalytics from './tiktok-account-analytics' // Changed import
 import { useTikTokAccount } from '@/hooks/use-tiktok-account'
 import { formatDistanceToNow } from 'date-fns'
 
 export function TikTokIntegration() {
-  const { account: tiktokAccount, loading: isLoading, error, refreshAccount: refreshProfile } = useTikTokAccount()
+  const {
+    account: tiktokAccount,
+    loading: isLoading,
+    error,
+    refreshAccount: refreshProfile,
+    disconnectAccount // Added disconnectAccount
+  } = useTikTokAccount()
+  const { toast } = useToast() // Initialize useToast
   const profileData = tiktokAccount?.profile_data || null
   const [activeTab, setActiveTab] = useState<string>('overview')
+  const [defaultPrivacy, setDefaultPrivacy] = useState<string>('private')
+  const [isDisconnecting, setIsDisconnecting] = useState(false) // Added disconnecting state
 
   // Format large numbers with commas
   const formatNumber = (num: number) => {
@@ -35,6 +45,26 @@ export function TikTokIntegration() {
 
   const handleRefresh = async () => {
     await refreshProfile()
+  }
+
+  const handleDisconnect = async () => {
+    if (!disconnectAccount) return;
+
+    setIsDisconnecting(true);
+    try {
+      await disconnectAccount();
+      // Toast for success is handled by the hook itself
+      // If not, add success toast here:
+      // toast({ title: "Account Disconnected", description: "TikTok account has been disconnected." });
+    } catch (error: any) {
+      toast({
+        title: "Disconnect Failed",
+        description: error.message || "Could not disconnect TikTok account.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDisconnecting(false);
+    }
   }
 
   // If we don't have a connected TikTok account, show a connect prompt
@@ -233,7 +263,7 @@ export function TikTokIntegration() {
             <div className="space-y-4">
               <div>
                 <h3 className="mb-3 text-lg font-medium">Default Privacy</h3>
-                <Select defaultValue="private">
+                <Select value={defaultPrivacy} onValueChange={setDefaultPrivacy}> {/* Updated Select */}
                   <SelectTrigger className="w-full max-w-xs">
                     <SelectValue placeholder="Select default privacy" />
                   </SelectTrigger>
@@ -252,7 +282,10 @@ export function TikTokIntegration() {
                 <p className="mb-3 text-sm text-muted-foreground">
                   Disconnecting your TikTok account will revoke access permissions. You'll need to reconnect to upload videos.
                 </p>
-                <Button variant="destructive">
+                <Button variant="destructive" onClick={handleDisconnect} disabled={isDisconnecting}>
+                  {isDisconnecting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
                   Disconnect TikTok Account
                 </Button>
               </div>

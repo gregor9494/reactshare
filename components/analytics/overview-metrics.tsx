@@ -155,17 +155,8 @@ export function OverviewMetrics() {
             }
           } catch (err) {
             console.error("Error fetching YouTube data:", err)
-            // Continue with fallback data
-            tempSocialData.youtube = {
-              available: true,
-              source: 'fallback',
-              stats: {
-                views: 124500,
-                subscribers: 45200,
-                engagementRate: '4.2%',
-                shares: 6225
-              }
-            }
+            tempSocialData.youtube.available = false
+            tempSocialData.youtube.source = null
           }
         }
         
@@ -233,17 +224,8 @@ export function OverviewMetrics() {
             }
           } catch (err) {
             console.error("Error fetching TikTok data:", err)
-            // Continue with fallback data
-            tempSocialData.tiktok = {
-              available: true,
-              source: 'fallback',
-              stats: {
-                views: 130300,
-                followers: 41200,
-                engagementRate: '6.5%',
-                shares: 10424
-              }
-            }
+            tempSocialData.tiktok.available = false
+            tempSocialData.tiktok.source = null
           }
         }
         
@@ -263,11 +245,16 @@ export function OverviewMetrics() {
           }
         } else {
           // No connected accounts
-          setDataSource('fallback')
-          setDefaultMockData()
+          setDataSource(null)
           return
         }
         
+        // Only use real data: exit if neither platform has real_api
+        if (tempSocialData.youtube.source !== 'real_api' && tempSocialData.tiktok.source !== 'real_api') {
+          setMetrics([])
+          setIsLoading(false)
+          return
+        }
         // Calculate combined metrics from all platforms
         
         // 1. Total Views (sum of YouTube + TikTok)
@@ -354,9 +341,8 @@ export function OverviewMetrics() {
         ])
       } catch (err) {
         console.error("Error fetching overview metrics:", err)
-        setError("Failed to load metrics data. Using fallback data instead.")
-        setDataSource('fallback')
-        setDefaultMockData()
+        setError("Failed to load metrics data.")
+        setDataSource(null)
         
         // Log detailed error for debugging
         if (err instanceof Error) {
@@ -377,38 +363,7 @@ export function OverviewMetrics() {
   }, [accounts, accountsLoading])
 
   // Function to set default mock data
-  const setDefaultMockData = () => {
-    setMetrics([
-      {
-        title: "Total Views",
-        value: "254.8K",
-        change: "+12.3%",
-        trend: "up",
-        icon: Eye,
-      },
-      {
-        title: "Subscribers",
-        value: "86.4K",
-        change: "+8.7%",
-        trend: "up",
-        icon: User,
-      },
-      {
-        title: "Engagement Rate",
-        value: "5.2%",
-        change: "-0.4%",
-        trend: "down",
-        icon: Check,
-      },
-      {
-        title: "Shares",
-        value: "12.5K",
-        change: "+24.1%",
-        trend: "up",
-        icon: Share2,
-      },
-    ])
-  }
+  const setDefaultMockData = () => {}
 
   if (isLoading || accountsLoading) {
     return (
@@ -464,9 +419,10 @@ export function OverviewMetrics() {
         </div>
       )}
       
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {metrics.map((metric, i) => (
-          <Card key={i}>
+      {metrics.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {metrics.map((metric, i) => (
+            <Card key={i}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
@@ -487,6 +443,11 @@ export function OverviewMetrics() {
           </Card>
         ))}
       </div>
+      ) : (
+        <div className="py-6 text-center">
+          <p className="text-muted-foreground">No analytics data available yet.</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -64,15 +64,20 @@ export function AudienceInsights() {
             })))
           }
         } else {
-          // If we don't have demographics data, fall back to mock data
-          setDataSource('fallback')
-          setDefaultMockData()
+          setDataSource(null)
+          setAgeGroups([])
+          setGenders([])
+          setLocations([])
+          return
         }
       } catch (err) {
         console.error("Error fetching demographic data:", err)
-        setError("Failed to load demographic data. Using fallback data instead.")
-        setDataSource('fallback')
-        setDefaultMockData()
+        setError("Failed to load demographic data.")
+        setDataSource(null)
+        setAgeGroups([])
+        setGenders([])
+        setLocations([])
+        return
       } finally {
         setIsLoading(false)
       }
@@ -81,31 +86,6 @@ export function AudienceInsights() {
     fetchDemographicData()
   }, [])
 
-  // Function to set default mock data
-  const setDefaultMockData = () => {
-    setAgeGroups([
-      { group: "18-24", percentage: 35 },
-      { group: "25-34", percentage: 42 },
-      { group: "35-44", percentage: 15 },
-      { group: "45-54", percentage: 5 },
-      { group: "55+", percentage: 3 },
-    ])
-
-    setGenders([
-      { type: "Male", percentage: 65 },
-      { type: "Female", percentage: 32 },
-      { type: "Other", percentage: 3 },
-    ])
-
-    setLocations([
-      { country: "United States", percentage: 45 },
-      { country: "United Kingdom", percentage: 15 },
-      { country: "Canada", percentage: 12 },
-      { country: "Australia", percentage: 8 },
-      { country: "Germany", percentage: 5 },
-      { country: "Other", percentage: 15 },
-    ])
-  }
 
   if (isLoading) {
     return (
@@ -115,6 +95,13 @@ export function AudienceInsights() {
     )
   }
 
+if (!dataSource) {
+  return (
+    <div className="h-[300px] w-full flex items-center justify-center">
+      <p className="text-muted-foreground">No analytics data available yet.</p>
+    </div>
+  )
+}
   return (
     <div className="space-y-6">
       {error && (
@@ -123,12 +110,6 @@ export function AudienceInsights() {
         </Alert>
       )}
       
-      {dataSource && dataSource === 'fallback' && !error && (
-        <div className="mb-2 text-xs flex items-center">
-          <span className="w-2 h-2 bg-amber-500 rounded-full mr-1"></span>
-          <span className="text-muted-foreground">Using estimated data</span>
-        </div>
-      )}
       
       {dataSource && dataSource === 'real_api' && (
         <div className="mb-2 text-xs flex items-center">

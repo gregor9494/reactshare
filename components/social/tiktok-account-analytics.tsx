@@ -15,18 +15,57 @@ function formatNumber(num: number): string {
   return new Intl.NumberFormat().format(num);
 }
 
+// Define a more specific type for the analytics data
+interface TikTokAnalyticsData {
+  dataSource: 'real_api' | 'fallback';
+  summaryStats: {
+    totalFollowers?: number;
+    totalLikes?: number;
+    totalViews?: number;
+    profileVisits?: number;
+    [key: string]: any; // Allow other stats
+  };
+  engagementMetrics: {
+    avgViews?: number;
+    avgLikes?: number;
+    engagementRate?: number | string; // Can be "N/A" or number
+    viewsToFollowerRatio?: number | string;
+    [key: string]: any;
+  };
+  demographics: {
+    ageGroups: { group: string; percentage: number }[];
+    genderSplit: { male?: number; female?: number; other?: number; [key: string]: any };
+    [key: string]: any;
+  };
+  followerGrowth: { date: string; Followers: number }[];
+  videoPerformance: {
+    title: string;
+    posted: string;
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    duration: number;
+    [key: string]: any;
+  }[];
+  lastUpdated: string;
+  tokenRefreshed?: boolean; // Add tokenRefreshed here
+  error?: string | { message?: string }; // To store potential error messages from API
+  [key: string]: any; // Allow other dynamic properties
+}
+
 interface TikTokAccountAnalyticsProps {
   account: SocialAccount;
   isLoading?: boolean;
   className?: string;
 }
 
-export default function TikTokAccountAnalytics({ 
-  account, 
+export default function TikTokAccountAnalytics({
+  account,
   isLoading = false,
   className
 }: TikTokAccountAnalyticsProps) {
-  const [analyticsData, setAnalyticsData] = useState<any | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<TikTokAnalyticsData | null>(null); // Use the new interface
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,14 +100,15 @@ export default function TikTokAccountAnalytics({
       ]);
       
       // Start with default data structure
-      let combinedData = {
+      let combinedData: TikTokAnalyticsData = { // Use the new interface
         dataSource: 'fallback',
         summaryStats: {},
         engagementMetrics: {},
         demographics: { ageGroups: [], genderSplit: {} },
         followerGrowth: [],
         videoPerformance: [],
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        tokenRefreshed: false // Initialize tokenRefreshed
       };
       
       // Check account response
@@ -134,11 +174,12 @@ export default function TikTokAccountAnalytics({
       
       // Update state with combined data
       setAnalyticsData(combinedData);
-      setDataSource(combinedData.dataSource || 'fallback');
+      setDataSource(combinedData.dataSource as 'real_api' | 'fallback' || 'fallback');
       
       // If we got some data but had to use fallback
       if (combinedData.dataSource === 'fallback' && combinedData.error) {
-        setError(`Using fallback data: ${combinedData.error.message || combinedData.error}`);
+        const errorMessage = typeof combinedData.error === 'string' ? combinedData.error : combinedData.error?.message;
+        setError(`Using fallback data: ${errorMessage || 'Unknown error'}`);
       } else if (combinedData.tokenRefreshed) {
         setError(`TikTok token was refreshed. Data should be updated now.`);
       } else {

@@ -30,16 +30,10 @@ export function PlatformBreakdown() {
         
         const activeAccounts = accounts?.filter(account => account.status === 'active') || []
         
-        // If no accounts connected, use fallback data
+        // No connected accounts
         if (activeAccounts.length === 0) {
-          setDataSource('fallback')
-          setData([
-            { name: "YouTube", value: 45, color: PLATFORM_COLORS.YouTube },
-            { name: "TikTok", value: 25, color: PLATFORM_COLORS.TikTok },
-            { name: "Instagram", value: 15, color: PLATFORM_COLORS.Instagram },
-            { name: "Twitter", value: 10, color: PLATFORM_COLORS.Twitter },
-            { name: "Facebook", value: 5, color: PLATFORM_COLORS.Facebook },
-          ])
+          setDataSource(null)
+          setData([])
           return
         }
         
@@ -98,54 +92,16 @@ export function PlatformBreakdown() {
           
           setData(platformData)
         } else {
-          // Fallback with connected platforms but no view data
-          setDataSource('fallback')
-          
-          const estimatedData = []
-          
-          if (youtubeAccount) {
-            estimatedData.push({
-              name: "YouTube",
-              value: 70,
-              color: PLATFORM_COLORS.YouTube
-            })
-          }
-          
-          if (tiktokAccount) {
-            estimatedData.push({
-              name: "TikTok",
-              value: 30,
-              color: PLATFORM_COLORS.TikTok
-            })
-          }
-          
-          // If we have connected accounts but no view data, use these estimates
-          if (estimatedData.length > 0) {
-            setData(estimatedData)
-          } else {
-            // Fallback to demo data if no connected accounts
-            setData([
-              { name: "YouTube", value: 45, color: PLATFORM_COLORS.YouTube },
-              { name: "TikTok", value: 25, color: PLATFORM_COLORS.TikTok },
-              { name: "Instagram", value: 15, color: PLATFORM_COLORS.Instagram },
-              { name: "Twitter", value: 10, color: PLATFORM_COLORS.Twitter },
-              { name: "Facebook", value: 5, color: PLATFORM_COLORS.Facebook },
-            ])
-          }
+          // No real view data available
+          setDataSource(null)
+          setData([])
+          return
         }
       } catch (err) {
         console.error("Error fetching platform breakdown data:", err)
-        setError("Failed to load platform data. Using fallback data instead.")
-        setDataSource('fallback')
-        
-        // Use fallback data
-        setData([
-          { name: "YouTube", value: 45, color: PLATFORM_COLORS.YouTube },
-          { name: "TikTok", value: 25, color: PLATFORM_COLORS.TikTok },
-          { name: "Instagram", value: 15, color: PLATFORM_COLORS.Instagram },
-          { name: "Twitter", value: 10, color: PLATFORM_COLORS.Twitter },
-          { name: "Facebook", value: 5, color: PLATFORM_COLORS.Facebook },
-        ])
+        setError("Failed to load platform data.")
+        setDataSource(null)
+        setData([])
       } finally {
         setIsLoading(false)
       }
@@ -162,6 +118,14 @@ export function PlatformBreakdown() {
     )
   }
 
+  if (!isLoading && !accountsLoading && data.length === 0) {
+    return (
+      <div className="py-6 text-center">
+        <p className="text-muted-foreground">No analytics data available yet.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="h-[300px] w-full">
       {error && (
@@ -170,12 +134,6 @@ export function PlatformBreakdown() {
         </Alert>
       )}
       
-      {dataSource && dataSource === 'fallback' && !error && (
-        <div className="mb-2 text-xs flex items-center">
-          <span className="w-2 h-2 bg-amber-500 rounded-full mr-1"></span>
-          <span className="text-muted-foreground">Using estimated data</span>
-        </div>
-      )}
       
       {dataSource && dataSource === 'real_api' && (
         <div className="mb-2 text-xs flex items-center">

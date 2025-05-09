@@ -6,8 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, BarChart3, Eye, Smile, MessageSquare, Share2 } from 'lucide-react';
-import useYouTubeAccount from '@/hooks/use-youtube-account';
+import useYouTubeAccount from '@/hooks/use-youtube-account'; // Reverted to default import
 import { LineChart } from '@/components/ui/chart';
+import { SocialShare } from '@/lib/types';
 
 // Utility function to format numbers with commas
 function formatNumber(num: number): string {
@@ -21,7 +22,7 @@ interface YouTubeAnalyticsProps {
 
 export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) {
   const { youtubeAccount, channelData, isLoading, error, refreshChannel } = useYouTubeAccount();
-  const [recentShares, setRecentShares] = useState<any[]>([]);
+  const [recentShares, setRecentShares] = useState<SocialShare[]>([]); // Typed recentShares
   const [sharesLoading, setSharesLoading] = useState(true);
   const [sharesError, setSharesError] = useState<string | null>(null);
 
@@ -129,31 +130,26 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
         </div>
       )}
       
-      {!error && (
-        <div className="flex items-center mb-4 text-xs">
-          <span className={`w-2 h-2 bg-green-500 rounded-full mr-1`}></span>
-          <span className="text-muted-foreground">
-            {channelData?.dataSource === 'real_api' ? 'Using real YouTube API data' : 'Using fallback data'}
-          </span>
-        </div>
-      )}
+      {/* Removed incorrect channelData.dataSource check, as YouTubeChannel type does not have this property.
+          The error prop from useYouTubeAccount already indicates issues with data fetching.
+          A general "Connected" or "Sync status" could be shown if needed, but dataSource was specific to analytics responses. */}
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <AnalyticCard 
-          title="Views" 
-          value={formatNumber(parseInt(statistics.viewCount.toString() || '0'))} 
+        <AnalyticCard
+          title="Views"
+          value={formatNumber(parseInt((statistics.viewCount || 0).toString()))}
           icon={<Eye className="h-5 w-5" />}
           loading={isLoading}
         />
-        <AnalyticCard 
-          title="Subscribers" 
-          value={formatNumber(parseInt(statistics.subscriberCount.toString() || '0'))} 
+        <AnalyticCard
+          title="Subscribers"
+          value={formatNumber(parseInt((statistics.subscriberCount || 0).toString()))}
           icon={<BarChart3 className="h-5 w-5" />}
           loading={isLoading}
         />
-        <AnalyticCard 
-          title="Videos" 
-          value={formatNumber(parseInt(statistics.videoCount.toString() || '0'))} 
+        <AnalyticCard
+          title="Videos"
+          value={formatNumber(parseInt((statistics.videoCount || 0).toString()))}
           icon={<BarChart3 className="h-5 w-5" />}
           loading={isLoading}
         />
@@ -191,9 +187,9 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
         
         <TabsContent value="growth">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ChannelGrowthChart isLoading={isLoading} youtubeAccount={youtubeAccount} />
-            <ViewDistributionChart isLoading={isLoading} youtubeAccount={youtubeAccount} />
-            <PerformanceMetricsCard isLoading={isLoading} youtubeAccount={youtubeAccount} />
+            <ChannelGrowthChart isLoading={isLoading} />
+            <ViewDistributionChart isLoading={isLoading} />
+            <PerformanceMetricsCard isLoading={isLoading} />
           </div>
         </TabsContent>
       </Tabs>
@@ -227,7 +223,9 @@ function AnalyticCard({ title, value, icon, loading }: {
   );
 }
 
-function ShareItem({ share }: { share: any }) {
+// SocialShare import moved to top of file
+
+function ShareItem({ share }: { share: SocialShare }) {
   const videoUrl = share.provider_post_url;
   const title = share.metadata?.title || 'Untitled Video';
   const publishDate = new Date(share.created_at).toLocaleDateString();
@@ -245,7 +243,7 @@ function ShareItem({ share }: { share: any }) {
       <div className="flex flex-col md:flex-row gap-4">
         <div className="flex-1">
           <h4 className="font-medium">
-            <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+            <a href={videoUrl ?? undefined} target="_blank" rel="noopener noreferrer" className="hover:underline">
               {title}
             </a>
             {dataSource === 'fallback' && (
@@ -297,17 +295,22 @@ function ShareItem({ share }: { share: any }) {
 }
 
 // Channel Growth Chart with real data
-function ChannelGrowthChart({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+function ChannelGrowthChart({ isLoading }: { isLoading: boolean }) {
+  const { youtubeAccount } = useYouTubeAccount();
   const [growthData, setGrowthData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
     async function fetchGrowthData() {
-      if (!youtubeAccount) return;
+      if (!youtubeAccount) {
+        setChartLoading(false);
+        return;
+      }
       
       try {
         setChartLoading(true);
+        setError(null); // Reset error state
         const response = await fetch('/api/social/youtube/analytics/growth', {
           method: 'GET',
           headers: {
@@ -381,17 +384,22 @@ function ChannelGrowthChart({ isLoading, youtubeAccount }: { isLoading: boolean,
 }
 
 // View Distribution Chart with real data
-function ViewDistributionChart({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+function ViewDistributionChart({ isLoading }: { isLoading: boolean }) {
+  const { youtubeAccount } = useYouTubeAccount();
   const [viewsData, setViewsData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
     async function fetchViewsData() {
-      if (!youtubeAccount) return;
+      if (!youtubeAccount) {
+        setChartLoading(false);
+        return;
+      }
       
       try {
         setChartLoading(true);
+        setError(null); // Reset error state
         const response = await fetch('/api/social/youtube/analytics/views', {
           method: 'GET',
           headers: {
@@ -468,17 +476,22 @@ function ViewDistributionChart({ isLoading, youtubeAccount }: { isLoading: boole
 }
 
 // Performance Metrics with real data
-function PerformanceMetricsCard({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+function PerformanceMetricsCard({ isLoading }: { isLoading: boolean }) {
+  const { youtubeAccount } = useYouTubeAccount();
   const [metrics, setMetrics] = useState<any | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
     async function fetchPerformanceMetrics() {
-      if (!youtubeAccount) return;
+      if (!youtubeAccount) {
+        setMetricsLoading(false);
+        return;
+      }
       
       try {
         setMetricsLoading(true);
+        setError(null); // Reset error state
         const response = await fetch('/api/social/youtube/analytics', {
           method: 'GET',
           headers: {
