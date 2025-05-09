@@ -163,7 +163,7 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                       // This would ideally open a video player modal or navigate to a player page
                       // For now, let's try to open the storage_path if it's a direct URL
                       // Or use a download link as a proxy for "playing"
-                       window.open(`/api/videos/download?id=${video.id}`, '_blank');
+                       window.open(`/api/videos/play?id=${video.id}`, '_blank');
                     }}
                   >
                     <Play className="h-6 w-6" />
@@ -215,7 +215,7 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => {
-                         window.open(`/api/videos/download?id=${video.id}`, '_blank');
+                         window.open(`/api/videos/play?id=${video.id}`, '_blank');
                       }}
                       disabled={!video.storage_path}
                     >
