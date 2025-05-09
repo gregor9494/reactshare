@@ -20,6 +20,7 @@ export function VideoEditor({ recordedBlob, onEditingComplete }: VideoEditorProp
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(100);
   const [editComplete, setEditComplete] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   
@@ -65,6 +66,10 @@ export function VideoEditor({ recordedBlob, onEditingComplete }: VideoEditorProp
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
       setTrimEnd(100); // Set end to 100% by default
+      const w = videoRef.current.videoWidth;
+      const h = videoRef.current.videoHeight;
+      console.log("VideoEditor metadata loaded:", w, h);
+      setIsPortrait(h > w);
     }
   };
   
@@ -144,10 +149,10 @@ export function VideoEditor({ recordedBlob, onEditingComplete }: VideoEditorProp
       </CardHeader>
       <CardContent className="space-y-6 px-0">
         {/* Video Preview */}
-        <div className="aspect-video overflow-hidden rounded-md bg-black relative">
+        <div className={`${isPortrait ? 'aspect-[9/16] w-auto max-h-[50vh]' : 'aspect-video'} mx-auto overflow-hidden rounded-md bg-black relative`}>
           <video
             ref={videoRef}
-            className="h-full w-full object-contain"
+            className="w-full h-auto object-contain"
             onLoadedMetadata={handleMetadataLoaded}
             onTimeUpdate={handleTimeUpdate}
             onClick={togglePlay}

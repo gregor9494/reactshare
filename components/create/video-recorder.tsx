@@ -46,6 +46,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
   const [reactionPosition, setReactionPosition] = useState({ x: 10, y: 10 }) // Position in percentage for PiP mode
   const [reactionSize, setReactionSize] = useState(30) // Size in percentage for PiP mode (1-100)
   const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null);
+  const isSourcePortrait = sourceVideoDimensions ? sourceVideoDimensions.height > sourceVideoDimensions.width : false;
   
   const webcamRef = useRef<HTMLVideoElement>(null)
   const sourceVideoRef = useRef<HTMLVideoElement>(null)
@@ -680,7 +681,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           // Side-by-side view
           <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
             {/* Source Video */}
-            <div className="aspect-video overflow-hidden rounded-md bg-black">
+            <div className={`${isSourcePortrait ? 'aspect-[9/16] w-auto max-h-[50vh]' : 'aspect-video'} overflow-hidden rounded-md bg-black mx-auto`}>
               <video
                 ref={sourceVideoRef}
                 className="h-full w-full object-contain"
@@ -689,7 +690,13 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
                 crossOrigin="anonymous"
                 muted // Mute source video to avoid feedback
                 onError={(e) => console.error("Source video error event:", e)}
-                onLoadedData={() => console.log("Source video loaded data in side-by-side mode")}
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget as HTMLVideoElement;
+                  const w = v.videoWidth;
+                  const h = v.videoHeight;
+                  console.log("Side-by-side source metadata loaded:", w, h);
+                  setSourceVideoDimensions({ width: w, height: h });
+                }}
                 preload="auto"
               />
             </div>
@@ -714,7 +721,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
           </div>
         ) : (
           // Picture-in-Picture view with enhanced debugging and controls
-          <div className="relative aspect-video overflow-hidden rounded-md bg-black">
+          <div className={`relative ${isSourcePortrait ? 'aspect-[9/16] w-auto max-h-[50vh]' : 'aspect-video'} overflow-hidden rounded-md bg-black mx-auto`}>
             {/* Debug information overlay */}
             <div className="absolute top-0 left-0 bg-black/70 text-white px-2 py-1 z-50 text-xs">
               Video State: {sourceVideoRef.current ?
@@ -740,11 +747,14 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
                 console.log("Video paused in PiP mode");
                 setIsPlaying(false);
               }}
-              onLoadedData={() => {
-                console.log("Video loaded data in PiP mode");
-                if (isPlaying && sourceVideoRef.current) {
-                  sourceVideoRef.current.play()
-                    .catch(e => console.error("Error playing video after load:", e));
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget as HTMLVideoElement;
+                const w = v.videoWidth;
+                const h = v.videoHeight;
+                console.log("PiP source metadata loaded:", w, h);
+                setSourceVideoDimensions({ width: w, height: h });
+                if (isPlaying) {
+                  sourceVideoRef.current?.play().catch(e => console.error("Error playing after metadata load:", e));
                 }
               }}
               onError={(e) => {
