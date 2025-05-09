@@ -114,6 +114,7 @@ export interface YouTubeVideoAnalytics {
     genders: { [key: string]: number };
     countries: { [key: string]: number };
   };
+  data_source?: 'real_api' | 'fallback'; // Indicates if data is from API or generated as fallback
 }
 
 // OAuth scopes configuration

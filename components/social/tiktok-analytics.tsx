@@ -38,6 +38,7 @@ export default function TikTokAnalytics({ share }: TikTokAnalyticsProps) {
   const [analytics, setAnalytics] = useState<TikTokAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<'real_api' | 'fallback' | null>(null);
   const { toast } = useToast();
 
   const fetchAnalytics = async () => {
@@ -77,6 +78,14 @@ export default function TikTokAnalytics({ share }: TikTokAnalyticsProps) {
       
       const data = await response.json();
       setAnalytics(data.analytics);
+      
+      // Determine if we're using real or fallback data
+      setDataSource(data.analytics?.data_source || 'real_api');
+      
+      // If there's an error but we still got fallback data
+      if (data.error) {
+        setError(`${data.error.message}`);
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred while fetching analytics');
       toast({
@@ -205,9 +214,19 @@ export default function TikTokAnalytics({ share }: TikTokAnalyticsProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TikTok className="h-5 w-5" /> TikTok Analytics
+          {dataSource === 'fallback' && (
+            <span className="ml-2 text-xs bg-amber-100 text-amber-800 py-0.5 px-2 rounded-full">
+              Fallback Data
+            </span>
+          )}
         </CardTitle>
         <CardDescription>
           Performance metrics for your TikTok post
+          {dataSource && (
+            <span className="block text-xs mt-1">
+              {dataSource === 'real_api' ? 'Using real TikTok API data' : 'Using estimated data'}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -272,7 +291,21 @@ export default function TikTokAnalytics({ share }: TikTokAnalyticsProps) {
         </div>
       </CardContent>
       <CardFooter className="flex justify-between text-sm text-muted-foreground">
-        <div>Last updated: {lastUpdated}</div>
+        <div className="flex items-center">
+          {dataSource === 'real_api' && (
+            <span className="flex items-center mr-4">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+              Live data
+            </span>
+          )}
+          {dataSource === 'fallback' && (
+            <span className="flex items-center mr-4">
+              <span className="w-2 h-2 bg-amber-500 rounded-full mr-1"></span>
+              Fallback data
+            </span>
+          )}
+          <span>Last updated: {lastUpdated}</span>
+        </div>
         <Button onClick={fetchAnalytics} size="sm" variant="outline">
           <RefreshCw className="mr-2 h-3 w-3" /> Refresh
         </Button>

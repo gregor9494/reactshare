@@ -215,12 +215,13 @@ export function TikTokIntegration() {
           </TabsContent>
           
           <TabsContent value="analytics">
-            <div className="space-y-4">
-              <div className="text-center py-6">
+            <div className="space-y-6">
+              <TikTokAccountAnalytics account={tiktokAccount} isLoading={isLoading} />
+              <div className="text-center pt-3 border-t">
                 <p className="text-muted-foreground mb-4">
-                  Select a specific post from Account Activity to view its detailed analytics
+                  For per-post analytics, view your account activity
                 </p>
-                <Button variant="outline" onClick={() => setActiveTab("activity")}>
+                <Button variant="outline" onClick={() => window.location.href = "/dashboard/social"}>
                   <TikTokIcon className="mr-2 h-4 w-4" />
                   View Account Activity
                 </Button>

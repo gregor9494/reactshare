@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react"
 import { signIn } from "next-auth/react"
 import { formatDistanceToNow } from 'date-fns'
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/ui/use-toast"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -45,15 +46,18 @@ interface PlatformConfig {
 
 export function ConnectedAccounts() {
   const { data: session } = useSession();
+  const { toast } = useToast();
   const {
     accounts,
     isLoading,
     refreshAccount,
     toggleAccountStatus,
-    disconnectAccount
+    disconnectAccount,
+    refetch
   } = useSocialAccounts();
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   // Get platform-specific data
   const getPlatformData = (provider: string): {icon: PlatformIconType, color: string} => {
@@ -90,10 +94,69 @@ export function ConnectedAccounts() {
     setRefreshingId(accountId);
     try {
       await refreshAccount(accountId);
+      toast({
+        title: "Account refreshed",
+        description: "Account data has been updated successfully."
+      });
+    } catch (error) {
+      toast({
+        title: "Refresh failed",
+        description: error instanceof Error ? error.message : "Failed to refresh account",
+        variant: "destructive"
+      });
     } finally {
       setRefreshingId(null);
     }
   }
+
+  // Handle refreshing all accounts
+  const handleRefreshAll = async () => {
+    try {
+      setRefreshingAll(true);
+      
+      // Refresh account data
+      const accountsResponse = await fetch('/api/social', {
+        method: 'GET',
+        cache: 'no-store'
+      });
+      
+      if (!accountsResponse.ok) {
+        throw new Error(`Failed to refresh accounts: ${accountsResponse.statusText}`);
+      }
+      
+      // Also refresh analytics endpoints to get fresh data
+      await Promise.allSettled([
+        fetch('/api/social/youtube/analytics', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store'
+        }),
+        fetch('/api/social/tiktok/analytics', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store'
+        })
+      ]);
+      
+      // Refresh the account data
+      refetch();
+      
+      // Add success message
+      toast({
+        title: "Accounts refreshed",
+        description: "Social account data and analytics have been updated.",
+      });
+    } catch (error) {
+      console.error('Error refreshing social accounts:', error);
+      toast({
+        title: "Refresh failed",
+        description: error instanceof Error ? error.message : "Failed to refresh accounts data",
+        variant: "destructive",
+      });
+    } finally {
+      setRefreshingAll(false);
+    }
+  };
 
   // Handle disconnecting an account
   const handleDisconnect = async (accountId: string, provider: string) => {
@@ -111,19 +174,28 @@ export function ConnectedAccounts() {
       case "active":
         return (
           <Badge variant="outline" className="bg-green-50 text-green-700 hover:bg-green-50">
-            Active
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+              Active
+            </span>
           </Badge>
         )
       case "token_expired":
         return (
           <Badge variant="outline" className="bg-amber-50 text-amber-700 hover:bg-amber-50">
-            Token Expired
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-amber-500 rounded-full mr-1"></span>
+              Token Expired
+            </span>
           </Badge>
         )
       case "disconnected":
         return (
           <Badge variant="outline" className="bg-slate-100 text-slate-500 hover:bg-slate-100">
-            Disconnected
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-slate-400 rounded-full mr-1"></span>
+              Disconnected
+            </span>
           </Badge>
         )
       default:
@@ -184,6 +256,21 @@ export function ConnectedAccounts() {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold">Connected Accounts</h2>
+        {accounts.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshAll}
+            disabled={refreshingAll}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshingAll ? 'animate-spin' : ''}`} />
+            Refresh All
+          </Button>
+        )}
+      </div>
       {accounts.map((account) => {
         const { icon: Icon, color } = getPlatformData(account.provider);
         const isConnected = account.status === 'active';
@@ -200,6 +287,12 @@ export function ConnectedAccounts() {
                 <h3 className="font-medium">{account.provider.charAt(0).toUpperCase() + account.provider.slice(1)}</h3>
                 <p className="text-sm text-muted-foreground">
                   {account.provider_username ? `@${account.provider_username}` : 'No username'}
+                  {account.dataSource === 'real_api' && (
+                    <span className="ml-2 text-xs inline-flex items-center text-green-600">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></span>
+                      Real API
+                    </span>
+                  )}
                 </p>
               </div>
             </div>

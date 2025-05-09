@@ -11,18 +11,19 @@ import { AccountActivity } from "@/components/social/account-activity";
 import { YouTubeAnalytics } from "@/components/social/youtube-analytics";
 import { YouTubePlaylists } from "@/components/social/youtube-playlists";
 import { SocialErrorBanner } from "@/components/social/social-error-banner";
-// TikTokAnalytics is imported but used conditionally or within TikTokIntegration
-// import TikTokAnalytics from "@/components/social/tiktok-analytics";
+import TikTokAccountAnalytics from "@/components/social/tiktok-account-analytics";
 import { YouTubeIntegration } from "@/components/social/youtube-integration";
 import { TikTokIntegration } from "@/components/social/tiktok-integration";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import useSocialAccounts from "@/hooks/use-social-accounts";
+import { useTikTokAccount } from "@/hooks/use-tiktok-account";
 
 export default function SocialPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("accounts");
   const { accounts, isLoading: accountsLoading } = useSocialAccounts();
+  const { account: tiktokAccount, loading: tiktokLoading } = useTikTokAccount();
   const [hasYouTubeAccount, setHasYouTubeAccount] = useState(false);
   const [hasTikTokAccount, setHasTikTokAccount] = useState(false);
 
@@ -175,21 +176,27 @@ export default function SocialPage() {
                     TikTok Analytics
                   </h3>
                   <p className="text-muted-foreground">
-                    Monitor your TikTok videos performance and account growth.
+                    Monitor your TikTok account performance and growth metrics.
                   </p>
-                  {/* TikTokAnalytics is designed for individual shares, so show a placeholder or guide */}
-                  <div className="text-center py-10 border rounded-md bg-muted/10">
-                    <p className="text-muted-foreground mb-4">
-                      Select a specific post from the "Account Activity" tab to view its detailed analytics.
-                    </p>
-                    <button
-                      className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
-                      onClick={() => setActiveTab("activity")}
-                    >
-                      <TikTokIcon className="h-4 w-4" />
-                      View Account Activity
-                    </button>
-                  </div>
+                  {tiktokAccount ? (
+                    <TikTokAccountAnalytics
+                      account={tiktokAccount}
+                      isLoading={tiktokLoading}
+                    />
+                  ) : (
+                    <div className="text-center py-10 border rounded-md bg-muted/10">
+                      <p className="text-muted-foreground mb-4">
+                        Unable to load TikTok account information. Please try reconnecting your account.
+                      </p>
+                      <button
+                        className="bg-black text-white px-4 py-2 rounded-md flex items-center mx-auto gap-2"
+                        onClick={() => setActiveTab("accounts")}
+                      >
+                        <TikTokIcon className="h-4 w-4" />
+                        Manage Accounts
+                      </button>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>

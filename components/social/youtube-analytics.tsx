@@ -50,7 +50,33 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
   }, [youtubeAccount]);
 
   const handleRefresh = async () => {
-    await refreshChannel();
+    try {
+      // Show loading state
+      setSharesLoading(true);
+      
+      // Refresh channel data
+      await refreshChannel();
+      
+      // Also refresh shares data
+      const response = await fetch('/api/social/shares?provider=youtube&limit=5', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setRecentShares(data.shares || []);
+        setSharesError(null);
+      }
+    } catch (err) {
+      console.error("Error during refresh:", err);
+      setSharesError(err instanceof Error ? err.message : 'An error occurred during refresh');
+    } finally {
+      setSharesLoading(false);
+    }
   };
 
   if (!youtubeAccount) {
@@ -91,8 +117,24 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
       </div>
       
       {error && (
-        <div className="bg-destructive/10 text-destructive p-3 rounded-md mb-4">
+        <div className={`${error.includes('fallback') ? 'bg-amber-100 text-amber-800' : 'bg-destructive/10 text-destructive'} p-3 rounded-md mb-4`}>
           {error}
+          {error.includes('authentication') && (
+            <div className="mt-2">
+              <a href="/dashboard/social" className="underline">
+                Reconnect your YouTube account
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {!error && (
+        <div className="flex items-center mb-4 text-xs">
+          <span className={`w-2 h-2 bg-green-500 rounded-full mr-1`}></span>
+          <span className="text-muted-foreground">
+            {channelData?.dataSource === 'real_api' ? 'Using real YouTube API data' : 'Using fallback data'}
+          </span>
         </div>
       )}
       
@@ -149,95 +191,9 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
         
         <TabsContent value="growth">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="p-4">
-              <h3 className="font-medium mb-4">Subscriber Growth</h3>
-              {isLoading ? (
-                <Skeleton className="h-[200px] w-full" />
-              ) : (
-                <div>
-                  <LineChart
-                    data={[
-                      { month: 'Jan', Subscribers: Math.round(parseInt(statistics.subscriberCount.toString() || '0') * 0.7) },
-                      { month: 'Feb', Subscribers: Math.round(parseInt(statistics.subscriberCount.toString() || '0') * 0.75) },
-                      { month: 'Mar', Subscribers: Math.round(parseInt(statistics.subscriberCount.toString() || '0') * 0.8) },
-                      { month: 'Apr', Subscribers: Math.round(parseInt(statistics.subscriberCount.toString() || '0') * 0.85) },
-                      { month: 'May', Subscribers: Math.round(parseInt(statistics.subscriberCount.toString() || '0') * 0.95) },
-                      { month: 'Jun', Subscribers: parseInt(statistics.subscriberCount.toString() || '0') }
-                    ]}
-                    index="month"
-                    categories={['Subscribers']}
-                    colors={['rgb(234, 67, 53)']}
-                    height={200}
-                    showLegend={false}
-                    valueFormatter={(value: number) => formatNumber(value)}
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                    <div>6 months ago</div>
-                    <div>Today</div>
-                  </div>
-                </div>
-              )}
-            </Card>
-            
-            <Card className="p-4">
-              <h3 className="font-medium mb-4">View Distribution</h3>
-              {isLoading ? (
-                <Skeleton className="h-[200px] w-full" />
-              ) : (
-                <div>
-                  <LineChart
-                    data={[
-                      { day: 'Mon', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.12) },
-                      { day: 'Tue', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.15) },
-                      { day: 'Wed', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.20) },
-                      { day: 'Thu', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.18) },
-                      { day: 'Fri', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.16) },
-                      { day: 'Sat', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.10) },
-                      { day: 'Sun', Views: Math.round(parseInt(statistics.viewCount.toString() || '0') * 0.09) }
-                    ]}
-                    index="day"
-                    categories={['Views']}
-                    colors={['rgb(234, 67, 53)']}
-                    height={200}
-                    showLegend={false}
-                    valueFormatter={(value: number) => formatNumber(value)}
-                  />
-                  <div className="text-center text-xs text-muted-foreground mt-2">
-                    Views by day of week (estimated)
-                  </div>
-                </div>
-              )}
-            </Card>
-            
-            <Card className="p-4 md:col-span-2">
-              <h3 className="font-medium mb-4">Performance Metrics</h3>
-              {isLoading ? (
-                <Skeleton className="h-[150px] w-full" />
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-md">
-                    <div className="text-xs text-muted-foreground mb-1">Avg. Watch Time</div>
-                    <div className="text-xl font-semibold">3:42</div>
-                    <div className="text-xs text-green-600 mt-2">↑ 12% from last month</div>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-md">
-                    <div className="text-xs text-muted-foreground mb-1">Engagement Rate</div>
-                    <div className="text-xl font-semibold">4.8%</div>
-                    <div className="text-xs text-green-600 mt-2">↑ 0.7% from last month</div>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-md">
-                    <div className="text-xs text-muted-foreground mb-1">Click-Through Rate</div>
-                    <div className="text-xl font-semibold">2.3%</div>
-                    <div className="text-xs text-red-600 mt-2">↓ 0.2% from last month</div>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-md">
-                    <div className="text-xs text-muted-foreground mb-1">Avg. View Duration</div>
-                    <div className="text-xl font-semibold">54%</div>
-                    <div className="text-xs text-green-600 mt-2">↑ 3% from last month</div>
-                  </div>
-                </div>
-              )}
-            </Card>
+            <ChannelGrowthChart isLoading={isLoading} youtubeAccount={youtubeAccount} />
+            <ViewDistributionChart isLoading={isLoading} youtubeAccount={youtubeAccount} />
+            <PerformanceMetricsCard isLoading={isLoading} youtubeAccount={youtubeAccount} />
           </div>
         </TabsContent>
       </Tabs>
@@ -245,7 +201,8 @@ export function YouTubeAnalytics({ className, shareId }: YouTubeAnalyticsProps) 
   );
 }
 
-function AnalyticCard({ title, value, icon, loading }: { 
+// Analytics card component
+function AnalyticCard({ title, value, icon, loading }: {
   title: string;
   value: string | number;
   icon: React.ReactNode;
@@ -274,6 +231,7 @@ function ShareItem({ share }: { share: any }) {
   const videoUrl = share.provider_post_url;
   const title = share.metadata?.title || 'Untitled Video';
   const publishDate = new Date(share.created_at).toLocaleDateString();
+  const dataSource = share.analytics?.data_source || 'real_api';
   
   const stats = {
     views: share.analytics?.views || 0,
@@ -290,8 +248,29 @@ function ShareItem({ share }: { share: any }) {
             <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
               {title}
             </a>
+            {dataSource === 'fallback' && (
+              <span className="ml-2 text-xs bg-amber-100 text-amber-800 py-0.5 px-2 rounded-full">
+                Fallback Data
+              </span>
+            )}
           </h4>
-          <p className="text-sm text-muted-foreground">Published on {publishDate}</p>
+          <p className="text-sm text-muted-foreground">
+            Published on {publishDate}
+            {dataSource && (
+              <span className="ml-2 text-xs">
+                {dataSource === 'real_api' ?
+                  <span className="flex items-center inline-block">
+                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                    Live data
+                  </span> :
+                  <span className="flex items-center inline-block">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full mr-1"></span>
+                    Estimated data
+                  </span>
+                }
+              </span>
+            )}
+          </p>
         </div>
         
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -313,6 +292,289 @@ function ShareItem({ share }: { share: any }) {
           </div>
         </div>
       </div>
+    </Card>
+  );
+}
+
+// Channel Growth Chart with real data
+function ChannelGrowthChart({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+  const [growthData, setGrowthData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    async function fetchGrowthData() {
+      if (!youtubeAccount) return;
+      
+      try {
+        setChartLoading(true);
+        const response = await fetch('/api/social/youtube/analytics/growth', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store'
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.error) {
+            throw new Error(errorData.error);
+          } else {
+            throw new Error(`Failed to fetch growth data: ${response.statusText}`);
+          }
+        }
+        
+        const data = await response.json();
+        
+        // Check if we got valid data
+        if (data && Array.isArray(data.subscriberGrowth)) {
+          setGrowthData(data.subscriberGrowth);
+        } else {
+          console.warn("Received invalid growth data format:", data);
+          setGrowthData([]);
+        }
+      } catch (err) {
+        console.error('Error fetching subscriber growth:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load growth data');
+      } finally {
+        setChartLoading(false);
+      }
+    }
+    
+    fetchGrowthData();
+  }, [youtubeAccount]);
+  
+  const loading = isLoading || chartLoading;
+  
+  return (
+    <Card className="p-4">
+      <h3 className="font-medium mb-4">Subscriber Growth</h3>
+      {loading ? (
+        <Skeleton className="h-[200px] w-full" />
+      ) : error ? (
+        <div className="text-center text-muted-foreground py-12">
+          Unable to load growth data. {error}
+        </div>
+      ) : (
+        <div>
+          <LineChart
+            data={growthData.length > 0 ? growthData : [
+              { date: '6 months ago', Subscribers: 0 },
+              { date: 'Today', Subscribers: 0 }
+            ]}
+            index="date"
+            categories={['Subscribers']}
+            colors={['rgb(234, 67, 53)']}
+            height={200}
+            showLegend={false}
+            valueFormatter={(value: number) => formatNumber(value)}
+          />
+          <div className="flex justify-between text-xs text-muted-foreground mt-2">
+            <div>6 months ago</div>
+            <div>Today</div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// View Distribution Chart with real data
+function ViewDistributionChart({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+  const [viewsData, setViewsData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    async function fetchViewsData() {
+      if (!youtubeAccount) return;
+      
+      try {
+        setChartLoading(true);
+        const response = await fetch('/api/social/youtube/analytics/views', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store'
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.error) {
+            throw new Error(errorData.error);
+          } else {
+            throw new Error(`Failed to fetch views data: ${response.statusText}`);
+          }
+        }
+        
+        const data = await response.json();
+        
+        // Check if we got valid data
+        if (data && Array.isArray(data.viewsData)) {
+          setViewsData(data.viewsData);
+        } else {
+          console.warn("Received invalid views data format:", data);
+          setViewsData([]);
+        }
+      } catch (err) {
+        console.error('Error fetching views distribution:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load views data');
+      } finally {
+        setChartLoading(false);
+      }
+    }
+    
+    fetchViewsData();
+  }, [youtubeAccount]);
+  
+  const loading = isLoading || chartLoading;
+  
+  return (
+    <Card className="p-4">
+      <h3 className="font-medium mb-4">View Distribution</h3>
+      {loading ? (
+        <Skeleton className="h-[200px] w-full" />
+      ) : error ? (
+        <div className="text-center text-muted-foreground py-12">
+          Unable to load views data. {error}
+        </div>
+      ) : (
+        <div>
+          <LineChart
+            data={viewsData.length > 0 ? viewsData : [
+              { date: '1/1', Views: 0 },
+              { date: '1/8', Views: 0 },
+              { date: '1/15', Views: 0 },
+              { date: '1/22', Views: 0 },
+              { date: '1/29', Views: 0 },
+              { date: 'Today', Views: 0 }
+            ]}
+            index="date"
+            categories={['Views']}
+            colors={['rgb(234, 67, 53)']}
+            height={200}
+            showLegend={false}
+            valueFormatter={(value: number) => formatNumber(value)}
+          />
+          <div className="text-center text-xs text-muted-foreground mt-2">
+            Daily views (last 30 days)
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Performance Metrics with real data
+function PerformanceMetricsCard({ isLoading, youtubeAccount }: { isLoading: boolean, youtubeAccount?: any }) {
+  const [metrics, setMetrics] = useState<any | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    async function fetchPerformanceMetrics() {
+      if (!youtubeAccount) return;
+      
+      try {
+        setMetricsLoading(true);
+        const response = await fetch('/api/social/youtube/analytics', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store'
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.error) {
+            throw new Error(errorData.error);
+          } else {
+            throw new Error(`Failed to fetch performance metrics: ${response.statusText}`);
+          }
+        }
+        
+        const data = await response.json();
+        
+        // Store the entire response object if it's valid
+        if (data) {
+          setMetrics(data);
+          // Log success for debugging
+          console.log("Successfully loaded YouTube metrics data, source:", data.source || "unknown");
+        } else {
+          throw new Error("Received empty response from analytics API");
+        }
+      } catch (err) {
+        console.error('Error fetching performance metrics:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load metrics');
+      } finally {
+        setMetricsLoading(false);
+      }
+    }
+    
+    fetchPerformanceMetrics();
+  }, [youtubeAccount]);
+  
+  const loading = isLoading || metricsLoading;
+  
+  // Extract metrics from response data
+  const summaryStats = metrics?.summaryStats || {};
+  const engagementMetrics = metrics?.engagementMetrics || {};
+  
+  return (
+    <Card className="p-4 md:col-span-2">
+      <h3 className="font-medium mb-4">Performance Metrics</h3>
+      {loading ? (
+        <Skeleton className="h-[150px] w-full" />
+      ) : error ? (
+        <div className="text-center text-muted-foreground py-6">
+          Unable to load performance metrics. {error}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Avg. Watch Time</div>
+            <div className="text-xl font-semibold">
+              {engagementMetrics.avgWatchTime || "N/A"}
+            </div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Engagement Rate</div>
+            <div className="text-xl font-semibold">
+              {engagementMetrics.engagementRate || "N/A"}
+            </div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Click-Through Rate</div>
+            <div className="text-xl font-semibold">
+              {engagementMetrics.ctr || "N/A"}
+            </div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Avg. Views</div>
+            <div className="text-xl font-semibold">
+              {engagementMetrics.avgViews ? formatNumber(engagementMetrics.avgViews) : "N/A"}
+            </div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Avg. Likes</div>
+            <div className="text-xl font-semibold">
+              {engagementMetrics.avgLikes ? formatNumber(engagementMetrics.avgLikes) : "N/A"}
+            </div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-md">
+            <div className="text-xs text-muted-foreground mb-1">Avg. Views Per Video</div>
+            <div className="text-xl font-semibold">
+              {summaryStats.avgViewsPerVideo ? formatNumber(summaryStats.avgViewsPerVideo) : "N/A"}
+              {metrics?.dataSource === 'fallback' && (
+                <div className="text-xs text-muted-foreground mt-1">Estimated</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
