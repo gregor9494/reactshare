@@ -10,6 +10,7 @@ import Link from "next/link";
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react"; // For client-side session
+import { useSearchParams, useRouter } from "next/navigation"; // For accessing URL query params
 import { toast } from "sonner"; // For notifications
 import { Download } from "lucide-react"; // Icons for button, removed Loader
 
@@ -21,6 +22,8 @@ import { Download } from "lucide-react"; // Icons for button, removed Loader
 
 export default function LibraryPage() {
   const { data: session, status: sessionStatus } = useSession();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [sourceVideos, setSourceVideos] = useState<SourceVideo[]>([]);
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -28,13 +31,11 @@ export default function LibraryPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Fetch initial videos
   // Get the current folder ID from URL query params
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const folderId = url.searchParams.get('folderId');
+    const folderId = searchParams.get('folderId');
     setCurrentFolderId(folderId);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchVideos = async () => {
@@ -71,7 +72,7 @@ export default function LibraryPage() {
       // For now, assume middleware handles redirection
       setIsLoadingVideos(false);
     }
-  }, [session, sessionStatus]);
+  }, [session, sessionStatus, currentFolderId]);
 
 
   const handleDownloadVideo = async () => {
