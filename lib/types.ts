@@ -30,6 +30,15 @@ export interface SocialAccount {
 
 // You can add other types here as needed
 // export interface Profile { ... }
+export interface Folder {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SourceVideo {
   id: string;
   user_id: string;
@@ -43,6 +52,7 @@ export interface SourceVideo {
   duration?: number; // Optional: duration in seconds
   file_format?: string; // Optional: e.g., 'mp4', 'webm'
   file_size?: number; // Optional: size in bytes
+  folder_id?: string | null; // Reference to folder
 }
 
 // YouTube specific types

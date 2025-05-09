@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { VideoGrid } from "@/components/library/video-grid";
-import { SourceVideo } from "@/lib/types";
+import { FolderNavigation } from "@/components/library/folder-navigation";
+import { SourceVideo, Folder as FolderType } from "@/lib/types";
 import Link from "next/link";
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from "react";
@@ -21,24 +22,38 @@ import { Download } from "lucide-react"; // Icons for button, removed Loader
 export default function LibraryPage() {
   const { data: session, status: sessionStatus } = useSession();
   const [sourceVideos, setSourceVideos] = useState<SourceVideo[]>([]);
+  const [folders, setFolders] = useState<FolderType[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoUrl, setVideoUrl] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Fetch initial videos
+  // Get the current folder ID from URL query params
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const folderId = url.searchParams.get('folderId');
+    setCurrentFolderId(folderId);
+  }, []);
+
   useEffect(() => {
     const fetchVideos = async () => {
       if (session?.user?.id) {
         setIsLoadingVideos(true);
         try {
           // We'll use an API route to fetch videos to keep Supabase admin client server-side
-          const response = await fetch('/api/videos/library');
+          const url = new URL('/api/videos/library', window.location.origin);
+          if (currentFolderId) {
+            url.searchParams.append('folderId', currentFolderId);
+          }
+          const response = await fetch(url);
           if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Failed to fetch videos');
           }
           const data = await response.json();
           setSourceVideos(data.videos || []);
+          setFolders(data.folders || []);
         } catch (error: any) {
           console.error('Error fetching source videos:', error);
           toast.error(`Error fetching videos: ${error.message}`);
@@ -177,7 +192,19 @@ export default function LibraryPage() {
             <p className="mt-2 text-sm text-muted-foreground">Please wait while your video library is being loaded.</p>
         </div>
       ) : (
-        <VideoGrid videos={sourceVideos} />
+        <>
+          <FolderNavigation
+            folders={folders}
+            currentFolderId={currentFolderId}
+            onFolderCreated={(folder) => {
+              setFolders((prev) => [...prev, folder]);
+            }}
+            onFolderDeleted={(folderId) => {
+              setFolders((prev) => prev.filter((folder) => folder.id !== folderId));
+            }}
+          />
+          <VideoGrid videos={sourceVideos} folders={folders} />
+        </>
       )}
     </>
   );

@@ -14,18 +14,32 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download } from "lucide-react"; // Removed problematic icons
-import { SourceVideo } from '@/lib/types'; // Import SourceVideo type
+import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download, Plus } from "lucide-react";
+import { SourceVideo, Folder as FolderType } from '@/lib/types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 // Define props interface
 interface VideoGridProps {
   videos: SourceVideo[]; // Accept an array of SourceVideo objects
-  // Removed type prop for MVP simplicity
+  folders?: FolderType[]; // Optional folders for move operation
 }
 
 // Update component signature
-export function VideoGrid({ videos }: VideoGridProps) {
+export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [singleVideoToMove, setSingleVideoToMove] = useState<string | null>(null);
+  
+  // Function to open the move dialog for a single video
+  const openMoveDialogForVideo = (videoId: string) => {
+    setSingleVideoToMove(videoId);
+    setSelectedVideos([videoId]);
+    setIsMoveDialogOpen(true);
+  };
 
   // Removed mock data
   // const videos = [...]
@@ -50,12 +64,28 @@ export function VideoGrid({ videos }: VideoGridProps) {
 
   return (
     <div className="space-y-4">
+      {/* Error message */}
+      {errorMessage && (
+        <div className="mb-4 p-4 border border-red-300 bg-red-50 text-red-700 rounded-md">
+          <p className="font-medium">{errorMessage}</p>
+          <p className="text-sm mt-1">To enable folders, run the SQL migration in migrations/add_folders_table.sql</p>
+        </div>
+      )}
       {selectedVideos.length > 0 && (
         <div className="flex items-center justify-between rounded-md bg-muted p-2">
           <p className="text-sm">{selectedVideos.length} videos selected</p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              Share
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (selectedVideos.length > 0) {
+                  setIsMoveDialogOpen(true);
+                }
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Move to Folder
             </Button>
             <Button
               variant="outline"
@@ -212,6 +242,12 @@ export function VideoGrid({ videos }: VideoGridProps) {
                       <Download className="mr-2 h-4 w-4" />
                       Download Video
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => openMoveDialogForVideo(video.id)}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Move to Folder
+                    </DropdownMenuItem>
                     <DropdownMenuItem disabled> {/* Placeholder */}
                       <Share2 className="mr-2 h-4 w-4" />
                       Share Video
@@ -232,6 +268,93 @@ export function VideoGrid({ videos }: VideoGridProps) {
           </Card>
         ))}
       </div>
+
+      {/* Move to Folder Dialog */}
+      <Dialog open={isMoveDialogOpen} onOpenChange={setIsMoveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {singleVideoToMove ?
+                "Move video to folder" :
+                `Move ${selectedVideos.length} video${selectedVideos.length !== 1 ? 's' : ''} to folder`
+              }
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  variant={selectedFolderId === null ? "default" : "outline"}
+                  className="justify-start"
+                  onClick={() => setSelectedFolderId(null)}
+                >
+                  <span className="mr-2">🏠</span> No Folder (Root)
+                </Button>
+                {folders.map((folder) => (
+                  <Button
+                    key={folder.id}
+                    variant={selectedFolderId === folder.id ? "default" : "outline"}
+                    className="justify-start"
+                    onClick={() => setSelectedFolderId(folder.id)}
+                  >
+                    <span className="mr-2">📁</span> {folder.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsMoveDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setIsMoving(true);
+                try {
+                  const response = await fetch('/api/videos/move', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      videoIds: selectedVideos,
+                      folderId: selectedFolderId,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const error = await response.json();
+                    // Check if the error is related to the folders table not existing
+                    if (error.details && (
+                      error.details.includes("folders table does not exist") ||
+                      error.details.includes("folder_id column does not exist")
+                    )) {
+                      setErrorMessage("The folders feature is not yet available. Please run the database migration first.");
+                    }
+                    throw new Error(error.error || 'Failed to move videos');
+                  }
+
+                  toast.success(`Successfully moved ${selectedVideos.length} video${selectedVideos.length !== 1 ? 's' : ''}`);
+                  setSelectedVideos([]);
+                  setSingleVideoToMove(null);
+                  setIsMoveDialogOpen(false);
+                  
+                  // Refresh the page to show updated videos
+                  window.location.reload();
+                } catch (error: any) {
+                  console.error('Error moving videos:', error);
+                  toast.error(`Failed to move videos: ${error.message}`);
+                } finally {
+                  setIsMoving(false);
+                }
+              }}
+              disabled={isMoving}
+            >
+              {isMoving ? 'Moving...' : 'Move Videos'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
