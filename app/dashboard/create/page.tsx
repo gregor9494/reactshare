@@ -2,7 +2,7 @@
 
 // Import necessary hooks and components
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -45,6 +45,7 @@ type Step = 'source' | 'record' | 'edit' | 'publish';
 
 export default function CreatePage() {
   const router = useRouter();
+  const searchParamsHook = useSearchParams();
   const [currentStep, setCurrentStep] = useState<Step>('source');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -63,6 +64,74 @@ export default function CreatePage() {
       sourceUrl: "",
     },
   });
+
+  // Check for sourceVideoId in URL query params when component mounts
+  useEffect(() => {
+    // Make sure searchParamsHook is available
+    if (!searchParamsHook) {
+      console.log('searchParamsHook is not available yet');
+      return;
+    }
+    
+    const sourceVideoIdParam = searchParamsHook.get('sourceVideoId');
+    console.log('searchParamsHook:', searchParamsHook);
+    console.log('All URL parameters:', Array.from(searchParamsHook.entries()));
+    console.log('sourceVideoIdParam from URL:', sourceVideoIdParam);
+    
+    if (sourceVideoIdParam) {
+      // If sourceVideoId is in URL, fetch the video details and set up the state
+      const fetchVideoDetails = async () => {
+        setIsLoading(true);
+        setMessage(null);
+        try {
+          console.log(`Fetching video details for ID: ${sourceVideoIdParam}`);
+          const response = await fetch(`/api/videos/library?id=${sourceVideoIdParam}`);
+          console.log('API response status:', response.status);
+          
+          if (!response.ok) {
+            const errorResult = await response.json();
+            console.error('API error response:', errorResult);
+            setMessage({ type: 'error', text: errorResult.error || 'Failed to fetch video details.' });
+            setIsLoading(false);
+            return;
+          }
+          
+          const result = await response.json();
+          console.log('API response data:', result);
+          
+          if (result.videos && result.videos.length > 0) {
+            const video = result.videos[0];
+            console.log('Found video:', video);
+            
+            // Set the source video ID
+            setSourceVideoId(video.id);
+            
+            // Make sure we have a URL, even if original_url is undefined
+            const url = video.original_url || `Video ID: ${video.id}`;
+            setSourceVideoUrl(url);
+            
+            setSelectedLibraryVideoId(video.id);
+            
+            console.log('State updated with video ID:', video.id);
+            console.log('State updated with video URL:', url);
+            
+            // Automatically proceed to recording step
+            setCurrentStep('record');
+          } else {
+            console.error('No videos found in API response');
+            setMessage({ type: 'error', text: 'Video not found.' });
+          }
+          setIsLoading(false);
+        } catch (err) {
+          console.error("Fetch video details error:", err);
+          setMessage({ type: 'error', text: 'An unexpected error occurred while fetching video details.' });
+          setIsLoading(false);
+        }
+      };
+      
+      fetchVideoDetails();
+    }
+  }, [searchParamsHook]);
 
   // Fetch library videos
   useEffect(() => {
@@ -133,20 +202,67 @@ export default function CreatePage() {
 
   // Handle library video selection
   const handleLibraryVideoSelect = (video: SourceVideo) => {
+    console.log('handleLibraryVideoSelect called with video:', video);
+    
     setMessage(null);
+    
+    // Set the source video ID and URL
     setSourceVideoId(video.id); // This is the ID from the 'source_videos' table
-    setSourceVideoUrl(video.original_url); // Use the original URL from the selected library video
+    
+    // Make sure we have a URL, even if original_url is undefined
+    const url = video.original_url || `Video ID: ${video.id}`;
+    setSourceVideoUrl(url);
+    
     setSelectedLibraryVideoId(video.id);
-    sourceForm.reset({ sourceUrl: "" }); // Clear URL input if library video is selected
-    console.log(`Selected library video: ID=${video.id}, URL=${video.original_url}`);
+    
+    // Clear URL input if library video is selected
+    sourceForm.reset({ sourceUrl: "" });
+    
+    console.log('State after selection:');
+    console.log(`- sourceVideoId: ${video.id}`);
+    console.log(`- sourceVideoUrl: ${url}`);
+    console.log(`- selectedLibraryVideoId: ${video.id}`);
+    
+    // Log the current state to verify it's being set correctly
+    setTimeout(() => {
+      console.log('Delayed state check:');
+      console.log('- sourceVideoId:', sourceVideoId);
+      console.log('- sourceVideoUrl:', sourceVideoUrl);
+      console.log('- selectedLibraryVideoId:', selectedLibraryVideoId);
+    }, 100);
   };
 
   // Proceed to recording step
   const proceedToRecording = () => {
-    if (!sourceVideoId || !sourceVideoUrl) {
+    console.log('proceedToRecording called');
+    console.log('sourceVideoId:', sourceVideoId);
+    console.log('sourceVideoUrl:', sourceVideoUrl);
+    console.log('selectedLibraryVideoId:', selectedLibraryVideoId);
+    
+    // Use selectedLibraryVideoId as a fallback if sourceVideoId is not set
+    const videoId = sourceVideoId || selectedLibraryVideoId;
+    
+    if (!videoId) {
+      console.error('Missing video ID');
       setMessage({ type: 'error', text: 'Please select or download a source video first.' });
       return;
     }
+    
+    // If sourceVideoUrl is not set but we have a videoId, create a fallback URL
+    const videoUrl = sourceVideoUrl || `Video ID: ${videoId}`;
+    
+    // Update the state with the fallback values if needed
+    if (!sourceVideoId && videoId) {
+      setSourceVideoId(videoId);
+    }
+    
+    if (!sourceVideoUrl && videoUrl) {
+      setSourceVideoUrl(videoUrl);
+    }
+    
+    console.log('Proceeding to recording step with video ID:', videoId);
+    console.log('Using video URL:', videoUrl);
+    
     // If a library video was selected, its status is already 'completed'.
     // If a URL was submitted, pollDownloadStatus would have moved to 'record' on completion.
     // So, we can directly move to 'record' if sourceVideoId and sourceVideoUrl are set.

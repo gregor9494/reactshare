@@ -60,6 +60,14 @@ export default function useYouTubePlaylists(): UseYouTubePlaylistsReturn {
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Handle 404 "YouTube account not found" error silently
+        if (response.status === 404 && errorData.error === 'YouTube account not found') {
+          console.log('No YouTube account connected. Playlists will be empty.');
+          setPlaylists([]);
+          return;
+        }
+        
         throw new Error(errorData.error || 'Failed to load playlists');
       }
       
@@ -86,6 +94,14 @@ export default function useYouTubePlaylists(): UseYouTubePlaylistsReturn {
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Handle 404 "YouTube account not found" error silently
+        if (response.status === 404 && errorData.error === 'YouTube account not found') {
+          console.log('No YouTube account connected. Playlist videos will be empty.');
+          setPlaylistVideos([]);
+          return;
+        }
+        
         throw new Error(errorData.error || 'Failed to load playlist videos');
       }
       
@@ -112,6 +128,14 @@ export default function useYouTubePlaylists(): UseYouTubePlaylistsReturn {
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Handle 404 "YouTube account not found" error silently
+        if (response.status === 404 && errorData.error === 'YouTube account not found') {
+          console.log('No YouTube account connected. Available videos will be empty.');
+          setAvailableVideos([]);
+          return;
+        }
+        
         throw new Error(errorData.error || 'Failed to load available videos');
       }
       

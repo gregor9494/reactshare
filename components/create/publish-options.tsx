@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
-import { CalendarIcon, Clock, Youtube, Instagram, Twitter, Facebook, Twitch, Check, Loader2 } from "lucide-react"
+import { CalendarIcon, Clock, Youtube, Instagram, Twitter, Facebook, Twitch, Check, Loader2, AlertTriangle } from "lucide-react"
 import TikTok from "@/components/ui/icons/tiktok"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -30,12 +30,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   const [title, setTitle] = useState(initialTitle || "")
   const [description, setDescription] = useState("")
   const [tags, setTags] = useState("")
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
   const [useOptimalTimes, setUseOptimalTimes] = useState(false)
   const [publishComplete, setPublishComplete] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
   const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>('private')
-  const [selectedPlaylist, setSelectedPlaylist] = useState<string>("")
+  const [selectedPlaylist, setSelectedPlaylist] = useState<string>("none")
   const [youtubeUploadStatus, setYoutubeUploadStatus] = useState<string>("")
   
   // Get social account and share data/functions
@@ -46,6 +46,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   
   // Check for connected accounts
   const [availablePlatforms, setAvailablePlatforms] = useState<string[]>([]);
+  const [showYouTubeError, setShowYouTubeError] = useState(false);
   
   // Effect to check which platforms are available based on connected accounts
   useEffect(() => {
@@ -59,26 +60,37 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       // Fetch YouTube playlists if YouTube is connected
       if (available.includes('youtube')) {
         loadPlaylists();
+        setShowYouTubeError(false);
+      } else {
+        // If YouTube is selected but not connected, show error
+        if (accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube')) {
+          setShowYouTubeError(true);
+        }
       }
+    } else if (accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube')) {
+      setShowYouTubeError(true);
     }
-  }, [accounts, loadPlaylists]);
+  }, [accounts, loadPlaylists, selectedAccountIds]);
   
-  // Toggle platform selection
-  const togglePlatform = (platform: string) => {
-    // Only allow selecting platforms that are connected
-    if (availablePlatforms.includes(platform)) {
-      setSelectedPlatforms(prev =>
-        prev.includes(platform)
-          ? prev.filter(p => p !== platform)
-          : [...prev, platform]
-      )
-    } else {
-      toast({
-        title: "Account not connected",
-        description: `Please connect your ${platform} account in the Social Accounts page first.`,
-        variant: "destructive"
-      })
-    }
+  // Toggle account selection
+  const toggleAccount = (accountId: string, forceState?: boolean) => {
+    setSelectedAccountIds(prev => {
+      const isCurrentlySelected = prev.includes(accountId);
+      
+      // If forceState is provided, use that, otherwise toggle
+      const shouldBeSelected = forceState !== undefined ? forceState : !isCurrentlySelected;
+      
+      if (shouldBeSelected && !isCurrentlySelected) {
+        // Add account if it should be selected and isn't already
+        return [...prev, accountId];
+      } else if (!shouldBeSelected && isCurrentlySelected) {
+        // Remove account if it shouldn't be selected but is
+        return prev.filter(id => id !== accountId);
+      }
+      
+      // No change needed
+      return prev;
+    });
   }
   
   // Handle publishing to platforms
@@ -96,7 +108,11 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     
     try {
       // Handle publishing to each selected platform
-      for (const platform of selectedPlatforms) {
+      // Get selected accounts
+      const selectedAccounts = accounts.filter(account => selectedAccountIds.includes(account.id));
+      
+      for (const account of selectedAccounts) {
+        const platform = account.provider.toLowerCase();
         if (platform === 'youtube') {
           await publishToYouTube()
         } else if (platform === 'tiktok') {
@@ -111,7 +127,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       
       toast({
         title: "Published successfully",
-        description: `Your reaction has been published to ${selectedPlatforms.length} platform(s)`,
+        description: `Your reaction has been published to ${selectedAccounts.length} platform(s)`,
         variant: "default"
       })
       
@@ -146,7 +162,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       description,
       privacy,
       tags: tagsList,
-      playlistId: selectedPlaylist || undefined
+      playlistId: selectedPlaylist === "none" ? undefined : selectedPlaylist
     })
     
     if (!result || !result.success) {
@@ -286,8 +302,25 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
               </Select>
             </div>
             
-            {/* YouTube Settings - Only show when YouTube is selected */}
-            {selectedPlatforms.includes('youtube') && (
+            {/* YouTube connection error */}
+            {showYouTubeError && (
+              <Alert className="mt-4 border-amber-200 bg-amber-50 text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  You need to connect a YouTube account to use YouTube features.
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 ml-1 text-amber-800 underline"
+                    onClick={() => window.location.href = '/dashboard/social'}
+                  >
+                    Connect your account
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {/* YouTube Settings - Only show when a YouTube account is selected and connected */}
+            {accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube') && (
               <div className="space-y-4 mt-4 p-4 border rounded-md bg-red-50/30">
                 <div className="flex items-center gap-2">
                   <Youtube className="h-5 w-5 text-red-600" />
@@ -306,7 +339,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
                       <SelectValue placeholder="Add to playlist (optional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None (Don't add to playlist)</SelectItem>
+                      <SelectItem value="none">None (Don't add to playlist)</SelectItem>
                       {playlists.map(playlist => (
                         <SelectItem key={playlist.id} value={playlist.id}>
                           {playlist.title} ({playlist.itemCount} videos)
@@ -330,40 +363,62 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           </div>
         </div>
         
-        {/* Platforms */}
+        {/* Connected Profiles */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium">Platforms</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {platforms.map((platform) => {
-              const Icon = platform.icon
-              const isSelected = selectedPlatforms.includes(platform.id)
-              
-              return (
-                <div 
-                  key={platform.id} 
-                  className={`flex items-center space-x-2 rounded-md border p-3 cursor-pointer transition-colors
-                    ${isSelected ? 'border-primary bg-primary/5' : ''}
-                  `}
-                  onClick={() => togglePlatform(platform.id)}
-                >
-                  <Checkbox 
-                    id={platform.id} 
-                    checked={isSelected}
-                    onCheckedChange={() => togglePlatform(platform.id)}
-                  />
-                  <div className="flex flex-1 items-center space-x-2">
-                    <Icon className={`h-5 w-5 ${platform.color}`} strokeWidth={platform.id === 'youtube' ? 2 : 1.5} />
-                    <label htmlFor={platform.id} className="flex-1 text-sm font-medium cursor-pointer">
-                      {platform.name}
-                    </label>
-                    {isSelected && (
-                      <Check className="h-4 w-4 text-green-500" />
-                    )}
+          <h3 className="text-lg font-medium">Connected Profiles</h3>
+          {accounts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
+              <p className="text-md font-semibold text-muted-foreground">No social accounts connected</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Please connect your social media accounts in the Social Accounts page first.
+              </p>
+              <Button variant="outline" className="mt-4" onClick={() => window.location.href = '/dashboard/social'}>
+                Connect Accounts
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {accounts.filter(account => account.status === 'active').map((account) => {
+                const platformInfo = platforms.find(p => p.id === account.provider.toLowerCase());
+                if (!platformInfo) return null;
+                
+                const Icon = platformInfo.icon;
+                const isSelected = selectedAccountIds.includes(account.id);
+                
+                const checkboxId = `platform-${account.id}`;
+                return (
+                  <div
+                    key={account.id}
+                    className={`flex items-center space-x-2 rounded-md border p-3 transition-colors
+                      ${isSelected ? 'border-primary bg-primary/5' : ''}
+                    `}
+                  >
+                    <div className="flex flex-1 items-center space-x-2">
+                      <Checkbox
+                        id={checkboxId}
+                        checked={isSelected}
+                        onCheckedChange={(checked) => toggleAccount(account.id, checked === true)}
+                      />
+                      <label htmlFor={checkboxId} className="flex flex-1 items-center space-x-2 cursor-pointer">
+                        <Icon className={`h-5 w-5 ${platformInfo.color}`} strokeWidth={account.provider.toLowerCase() === 'youtube' ? 2 : 1.5} />
+                        <div className="flex-1">
+                          <span className="text-sm font-medium block">
+                            {account.provider_username ? `@${account.provider_username}` : account.provider}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {platformInfo.name}
+                          </span>
+                        </div>
+                      </label>
+                      {isSelected && (
+                        <Check className="h-4 w-4 text-green-500" />
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
         
         {/* Publishing Schedule */}
@@ -423,7 +478,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           <Button variant="outline">Save as Draft</Button>
           <Button
             onClick={handlePublish}
-            disabled={isPublishing || (!reactionId && selectedPlatforms.length > 0)}
+            disabled={isPublishing || (!reactionId && selectedAccountIds.length > 0)}
           >
             {isPublishing ? (
               <>
@@ -431,7 +486,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
                 Publishing...
               </>
             ) : (
-              selectedPlatforms.length > 0 ? "Publish Now" : "Skip Publishing"
+              selectedAccountIds.length > 0 ? "Publish Now" : "Skip Publishing"
             )}
           </Button>
         </div>
@@ -441,8 +496,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           <Alert className="bg-green-50 border-green-200 mt-4">
             <Check className="h-4 w-4 text-green-500" />
             <AlertDescription className="text-green-700">
-              {selectedPlatforms.length > 0
-                ? `Your reaction video has been ${selectedPlatforms.includes('youtube') ? 'published to YouTube' : 'scheduled for publishing'} to ${selectedPlatforms.length} platform(s).`
+              {selectedAccountIds.length > 0
+                ? `Your reaction video has been ${accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube') ? 'published to YouTube' : 'scheduled for publishing'} to ${selectedAccountIds.length} platform(s).`
                 : "Your reaction video has been saved without publishing."}
             </AlertDescription>
           </Alert>

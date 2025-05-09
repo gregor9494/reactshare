@@ -23,6 +23,41 @@ export async function GET(request: Request) {
     const userId = session.user.id;
     const url = new URL(request.url);
     const folderId = url.searchParams.get('folderId');
+    const videoId = url.searchParams.get('id');
+
+    console.log('API Request URL:', request.url);
+    console.log('Parsed URL parameters - folderId:', folderId, 'videoId:', videoId);
+    console.log('User ID:', userId);
+
+    // If a specific video ID is requested, fetch just that video
+    if (videoId) {
+      console.log('Fetching specific video with ID:', videoId);
+      
+      const { data, error } = await supabase
+        .from('source_videos')
+        .select('*')
+        .eq('id', videoId)
+        .eq('user_id', userId)
+        .single();
+
+      console.log('Supabase query result - data:', data, 'error:', error);
+
+      if (error) {
+        console.error('Error fetching specific source video:', error);
+        return NextResponse.json({ error: 'Failed to fetch source video', details: error.message }, { status: 500 });
+      }
+
+      if (!data) {
+        console.log('No video found with ID:', videoId);
+        return NextResponse.json({ error: 'Video not found' }, { status: 404 });
+      }
+
+      console.log('Returning single video:', data);
+      return NextResponse.json({
+        videos: [data] as SourceVideo[],
+        folders: []
+      }, { status: 200 });
+    }
 
     // Fetch folders for the user
     let folders = [];

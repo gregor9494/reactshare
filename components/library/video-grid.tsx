@@ -348,9 +348,19 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     </DropdownMenuItem>
                      <DropdownMenuItem
                       onClick={() => {
-                        // Navigate to create page with source_video_id
-                        window.location.href = `/dashboard/create?sourceVideoId=${video.id}`;
+                        // Navigate to create page with sourceVideoId
+                        console.log('Creating reaction for video:', video);
+                        console.log('Video ID:', video.id);
+                        console.log('Video status:', video.status);
+                        console.log('Video storage_path:', video.storage_path);
+                        
+                        const url = `/dashboard/create?sourceVideoId=${video.id}`;
+                        console.log('Navigating to URL:', url);
+                        
+                        // Use router.push instead of window.location for better Next.js integration
+                        window.location.href = url;
                       }}
+                      disabled={video.status !== 'completed' || !video.storage_path}
                     >
                       <Edit className="mr-2 h-4 w-4" />
                       Create Reaction
