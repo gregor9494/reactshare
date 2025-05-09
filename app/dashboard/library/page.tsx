@@ -1,4 +1,4 @@
-"use client"; // Make this a client component
+="use client"; // Make this a client component
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,12 +30,32 @@ export default function LibraryPage() {
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [videoUrl, setVideoUrl] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadingCount, setDownloadingCount] = useState(0);
 
   // Get the current folder ID from URL query params
   useEffect(() => {
     const folderId = searchParams.get('folderId');
     setCurrentFolderId(folderId);
   }, [searchParams]);
+
+  // Count the number of videos that are currently downloading
+  useEffect(() => {
+    const count = sourceVideos.filter(video =>
+      video.status === 'processing' ||
+      video.status === 'downloading' ||
+      video.status === 'pending'
+    ).length;
+    
+    setDownloadingCount(count);
+    
+    // If there are downloads in progress, keep the downloading state active
+    if (count > 0) {
+      setIsDownloading(true);
+    } else {
+      // If no downloads are in progress, clear the downloading state
+      setIsDownloading(false);
+    }
+  }, [sourceVideos]);
 
   useEffect(() => {
     const fetchVideos = async () => {
@@ -105,28 +125,85 @@ export default function LibraryPage() {
         throw new Error(result.error || `Failed to start download (status: ${response.status})`);
       }
 
-      toast.success(result.message || "Download started! It will appear in your library once processed.", { id: "download-toast" });
-      setVideoUrl(""); // Clear input field
-
-      // Optionally, you could optimistically add a "processing" video to the list
-      // or set up polling/websockets to update the list when the download completes.
-      // For now, user will see it when it's 'completed' on next load or manual refresh.
-      // Or, we can re-fetch the videos after a short delay
-      setTimeout(async () => {
+      // Show a more informative message that tells the user to wait
+      toast.success(
+        "Download started! The URL has been cleared and you can track the download progress in the video grid below.",
+        {
+          id: "download-toast",
+          duration: 8000 // Show for 8 seconds to ensure user sees it
+        }
+      );
+      
+      // Store the URL that's being downloaded so we can track it
+      const downloadingUrl = videoUrl;
+      
+      // Clear the input field immediately after starting the download
+      setVideoUrl("");
+      
+      // Set up a polling mechanism to refresh the videos list
+      const pollInterval = setInterval(async () => {
         if (session?.user?.id) {
             const refreshResponse = await fetch('/api/videos/library');
             if (refreshResponse.ok) {
                 const data = await refreshResponse.json();
-                setSourceVideos(data.videos || []);
+                
+                // Check if the download is complete
+                const newVideo = data.videos.find((v: SourceVideo) => v.original_url === downloadingUrl);
+                
+                if (newVideo && newVideo.status === 'completed') {
+                  // Update the videos list with the new video
+                  setSourceVideos(data.videos || []);
+                  
+                  // Show success message
+                  toast.success("Download completed! The video is now available in your library.");
+                  
+                  // Wait a moment to ensure the UI updates with the new video
+                  setTimeout(() => {
+                    // Count how many videos are still downloading
+                    const stillDownloading = data.videos.filter((v: SourceVideo) =>
+                      v.status === 'processing' || v.status === 'downloading' || v.status === 'pending'
+                    ).length;
+                    
+                    // Update the downloading count
+                    setDownloadingCount(stillDownloading);
+                    
+                    // If no videos are downloading, clear the downloading state
+                    if (stillDownloading === 0) {
+                      setIsDownloading(false);
+                    }
+                    
+                    // Clear the interval
+                    clearInterval(pollInterval);
+                  }, 1000); // Wait 1 second to ensure UI updates
+                } else {
+                  // Just update the videos list
+                  setSourceVideos(data.videos || []);
+                }
             }
         }
-      }, 5000); // Refresh after 5 seconds
+      }, 3000); // Poll every 3 seconds
 
     } catch (error: any) {
       console.error('Download error:', error);
       toast.error(`Download failed: ${error.message}`, { id: "download-toast" });
-    } finally {
-      setIsDownloading(false);
+      
+      // Wait a moment to ensure any UI updates have completed
+      setTimeout(() => {
+        // Count how many videos are still downloading
+        const stillDownloading = sourceVideos.filter(video =>
+          video.status === 'processing' ||
+          video.status === 'downloading' ||
+          video.status === 'pending'
+        ).length;
+        
+        // Update the downloading count
+        setDownloadingCount(stillDownloading);
+        
+        // Only set downloading to false if there are no other downloads in progress
+        if (stillDownloading === 0) {
+          setIsDownloading(false);
+        }
+      }, 1000); // Wait 1 second to ensure UI updates
     }
   };
 
@@ -162,15 +239,29 @@ export default function LibraryPage() {
             <label htmlFor="videoUrl" className="mb-1 block text-sm font-medium text-foreground">
                 Download Video from URL
             </label>
-            <Input
-                id="videoUrl"
-                type="url"
-                placeholder="Enter video URL (e.g., YouTube, TikTok, Twitter)"
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                className="w-full"
-                disabled={isDownloading}
-            />
+            <div className="relative">
+              <Input
+                  id="videoUrl"
+                  type="url"
+                  placeholder="Enter video URL (e.g., YouTube, TikTok, Twitter)"
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  className={`w-full ${isDownloading ? 'pr-32' : ''}`}
+                  disabled={isDownloading}
+              />
+              {isDownloading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-amber-600 font-medium animate-pulse">
+                  {downloadingCount > 0 ? `Downloading (${downloadingCount})...` : 'Downloading...'}
+                </div>
+              )}
+            </div>
+            {isDownloading && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {downloadingCount > 1
+                  ? `Please wait until downloads are completed. ${downloadingCount} videos are currently being processed.`
+                  : 'Please wait until downloading is completed. The video will appear in your library.'}
+              </p>
+            )}
         </div>
         <Button
             onClick={handleDownloadVideo}

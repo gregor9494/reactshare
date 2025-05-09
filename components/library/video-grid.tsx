@@ -2,7 +2,7 @@
 
 import Image from "next/image"; // Keep Image if we add thumbnail display later
 import Link from "next/link"; // Keep Link if needed for reaction details page
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download, Plus } from "lucide-react";
+import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download, Plus, Loader2 } from "lucide-react";
 import { SourceVideo, Folder as FolderType } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
   const [isMoving, setIsMoving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [singleVideoToMove, setSingleVideoToMove] = useState<string | null>(null);
+  const [downloadingVideos, setDownloadingVideos] = useState<Record<string, { status: string, progress?: number }>>({});
   
   // Function to open the move dialog for a single video
   const openMoveDialogForVideo = (videoId: string) => {
@@ -40,6 +41,51 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
     setSelectedVideos([videoId]);
     setIsMoveDialogOpen(true);
   };
+  
+  // Poll for download status of videos that are in processing/downloading/pending state
+  useEffect(() => {
+    // Find videos that are still being processed
+    const processingVideos = videos.filter(video =>
+      video.status === 'processing' ||
+      video.status === 'downloading' ||
+      video.status === 'pending'
+    );
+    
+    if (processingVideos.length === 0) return;
+    
+    // Set up polling for these videos
+    const pollInterval = setInterval(async () => {
+      const updatedStatuses: Record<string, { status: string, progress?: number }> = {};
+      
+      // Check status for each processing video
+      for (const video of processingVideos) {
+        try {
+          const response = await fetch(`/api/videos/download?id=${video.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            updatedStatuses[video.id] = {
+              status: data.status,
+              progress: data.progress
+            };
+            
+            // If video is completed, we'll refresh the page on next interval
+            if (data.status === 'completed' &&
+                (video.status === 'processing' || video.status === 'downloading' || video.status === 'pending')) {
+              // Refresh the page to show the completed video
+              window.location.reload();
+              break;
+            }
+          }
+        } catch (error) {
+          console.error(`Error checking status for video ${video.id}:`, error);
+        }
+      }
+      
+      setDownloadingVideos(prev => ({...prev, ...updatedStatuses}));
+    }, 3000); // Poll every 3 seconds
+    
+    return () => clearInterval(pollInterval);
+  }, [videos]);
 
   // Removed mock data
   // const videos = [...]
@@ -62,6 +108,13 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
     );
   }
 
+  // Count the number of videos that are currently downloading
+  const downloadingCount = videos.filter(video =>
+    video.status === 'processing' ||
+    video.status === 'downloading' ||
+    video.status === 'pending'
+  ).length;
+
   return (
     <div className="space-y-4">
       {/* Error message */}
@@ -69,6 +122,23 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
         <div className="mb-4 p-4 border border-red-300 bg-red-50 text-red-700 rounded-md">
           <p className="font-medium">{errorMessage}</p>
           <p className="text-sm mt-1">To enable folders, run the SQL migration in migrations/add_folders_table.sql</p>
+        </div>
+      )}
+      
+      {/* Download status banner */}
+      {downloadingCount > 0 && (
+        <div className="mb-4 p-4 border border-amber-300 bg-amber-50 text-amber-700 rounded-md flex items-center">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <div>
+            <p className="font-medium">
+              {downloadingCount === 1
+                ? '1 video is currently downloading'
+                : `${downloadingCount} videos are currently downloading`}
+            </p>
+            <p className="text-sm mt-1">
+              Please wait until the downloads are completed. You can see the progress in the video grid below.
+            </p>
+          </div>
         </div>
       )}
       {selectedVideos.length > 0 && (
@@ -146,13 +216,41 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     <span>No Thumbnail</span>
                   </div>
                 )}
+                
+                {/* Download status overlay for processing videos */}
+                {(video.status === 'processing' || video.status === 'downloading' || video.status === 'pending' ||
+                  downloadingVideos[video.id]?.status === 'processing' ||
+                  downloadingVideos[video.id]?.status === 'downloading' ||
+                  downloadingVideos[video.id]?.status === 'pending') && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white">
+                    <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                    <span className="text-sm font-medium">
+                      {downloadingVideos[video.id]?.status === 'downloading' || video.status === 'downloading'
+                        ? 'Downloading...'
+                        : downloadingVideos[video.id]?.status === 'processing' || video.status === 'processing'
+                          ? 'Processing...'
+                          : 'Preparing...'}
+                    </span>
+                    {downloadingVideos[video.id]?.progress && (
+                      <div className="w-3/4 mt-2">
+                        <div className="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{ width: `${downloadingVideos[video.id].progress}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs mt-1 text-center">{downloadingVideos[video.id].progress}%</div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               {video.duration && (
                 <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white">
                   {new Date(video.duration * 1000).toISOString().substr(14, 5)} {/* Format duration */}
                 </div>
               )}
-              {video.storage_path && ( // Only show play button if video is available
+              {video.storage_path && video.status === 'completed' && ( // Only show play button if video is available and completed
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                   {/* Link to play the video - needs a player or direct link */}
                   <Button
@@ -191,6 +289,20 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     { (video.file_format || video.file_size) && <span className="mx-1">•</span>}
                     <span>Added: {new Date(video.created_at).toLocaleDateString()}</span>
                   </div>
+                  {/* Show download status if video is still processing */}
+                  {(video.status === 'processing' || video.status === 'downloading' || video.status === 'pending' ||
+                    downloadingVideos[video.id]?.status === 'processing' ||
+                    downloadingVideos[video.id]?.status === 'downloading' ||
+                    downloadingVideos[video.id]?.status === 'pending') && (
+                    <div className="mt-1 text-xs text-amber-600 font-medium flex items-center">
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      {downloadingVideos[video.id]?.status === 'downloading' || video.status === 'downloading'
+                        ? 'Downloading in progress...'
+                        : downloadingVideos[video.id]?.status === 'processing' || video.status === 'processing'
+                          ? 'Processing video...'
+                          : 'Preparing download...'}
+                    </div>
+                  )}
                   {video.original_url && (
                     <Link
                         href={video.original_url}
@@ -217,7 +329,7 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                       onClick={() => {
                          window.open(`/api/videos/play?id=${video.id}`, '_blank');
                       }}
-                      disabled={!video.storage_path}
+                      disabled={!video.storage_path || video.status !== 'completed'}
                     >
                       <Play className="mr-2 h-4 w-4" />
                       Play/Preview
@@ -233,11 +345,11 @@ export function VideoGrid({ videos, folders = [] }: VideoGridProps) {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
-                        if (video.storage_path) {
+                        if (video.storage_path && video.status === 'completed') {
                           window.open(`/api/videos/download?id=${video.id}`, '_blank');
                         }
                       }}
-                      disabled={!video.storage_path}
+                      disabled={!video.storage_path || video.status !== 'completed'}
                     >
                       <Download className="mr-2 h-4 w-4" />
                       Download Video
