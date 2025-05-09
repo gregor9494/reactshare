@@ -5,39 +5,32 @@ import { PublishOptions } from '@/components/create/publish-options';
 import { Label } from '@/components/ui/label';
 import { SourceVideoGrid } from '@/components/create/source-video-grid';
 import { SourceVideo } from '@/lib/types';
+import { toast } from 'sonner';
 
 export default function PostPage() {
   const [videos, setVideos] = useState<SourceVideo[]>([]);
   const [selectedVideoId, setSelectedVideoId] = useState<string>();
   const [initialTitle, setInitialTitle] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchReactions = async () => {
+    const fetchVideos = async () => {
+      setIsLoading(true);
       try {
-        const res = await fetch('/api/reactions');
-        if (res.ok) {
-          const data = await res.json();
-          const reactionList = Array.isArray(data) ? data : [];
-          const mappedVideos: SourceVideo[] = reactionList
-            .filter((r: any) => r.reaction_video_storage_path)
-            .map((r: any) => ({
-              id: r.id,
-              user_id: r.user_id,
-              original_url: r.reaction_video_storage_path!,
-              storage_path: r.reaction_video_storage_path!,
-              title: r.title || '',
-              thumbnail_url: null,
-              status: r.status,
-              created_at: r.created_at,
-              updated_at: r.updated_at,
-            }));
-          setVideos(mappedVideos);
+        const res = await fetch('/api/videos/library');
+        if (!res.ok) {
+          throw new Error(`Failed to fetch videos: ${res.statusText}`);
         }
+        const data = await res.json();
+        setVideos(Array.isArray(data.videos) ? data.videos : []);
       } catch (error) {
-        console.error('Error fetching reactions:', error);
+        console.error('Error fetching videos:', error);
+        toast.error('Failed to load videos. Please try again later.');
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchReactions();
+    fetchVideos();
   }, []);
 
   const handleSelect = (id: string) => {
@@ -48,14 +41,28 @@ export default function PostPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Post Reaction</h1>
+      <h1 className="text-2xl font-bold">Post Video</h1>
       <div>
-        <Label>Select a Reaction Video</Label>
-        <SourceVideoGrid
-          videos={videos}
-          selectedVideoId={selectedVideoId}
-          onVideoSelect={(video) => handleSelect(video.id)}
-        />
+        <Label>Select a Video</Label>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-12 text-center">
+            <p className="text-md font-semibold text-muted-foreground">Loading videos...</p>
+            <p className="mt-2 text-sm text-muted-foreground">Please wait while your videos are being loaded.</p>
+          </div>
+        ) : videos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-12 text-center">
+            <p className="text-md font-semibold text-muted-foreground">No videos found</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              You need to create or upload videos before you can post them to social media.
+            </p>
+          </div>
+        ) : (
+          <SourceVideoGrid
+            videos={videos}
+            selectedVideoId={selectedVideoId}
+            onVideoSelect={(video) => handleSelect(video.id)}
+          />
+        )}
       </div>
       {selectedVideoId && (
         <PublishOptions reactionId={selectedVideoId} initialTitle={initialTitle} />
