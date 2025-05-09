@@ -86,6 +86,9 @@ export function PerformanceChart() {
           }
         }
         
+        // Only keep real API status, treat fallback as unavailable
+        dataSourceStatus.youtube = dataSourceStatus.youtube === 'real_api' ? 'real_api' : 'unavailable';
+        dataSourceStatus.tiktok = dataSourceStatus.tiktok === 'real_api' ? 'real_api' : 'unavailable';
         setDataSource(dataSourceStatus);
         
         // Process the chart data based on available sources

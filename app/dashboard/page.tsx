@@ -90,77 +90,19 @@ export default async function DashboardPage() { // Make the component async
             <CardTitle className="text-sm font-medium">Total Reactions</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Display actual count */}
             <div className="text-2xl font-bold">{reactions.length}</div>
-            <p className="text-xs text-muted-foreground">Based on your reactions</p> {/* Updated description */}
-          </CardContent>
-        </Card>
-        {/* Remove or update other static cards as needed */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Views</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-            <p className="text-xs text-muted-foreground">Views not tracked in MVP</p> {/* Updated description */}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Engagement Rate</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-            <p className="text-xs text-muted-foreground">Engagement not tracked in MVP</p> {/* Updated description */}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Scheduled Posts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">N/A</div> {/* Placeholder */}
-            <p className="text-xs text-muted-foreground">Scheduling not in MVP</p> {/* Updated description */}
+            <p className="text-xs text-muted-foreground">Based on your reactions</p>
           </CardContent>
         </Card>
       </div>
-      <div className="grid gap-6 pt-6 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
+      <div className="pt-6">
+        <Card>
           <CardHeader>
             <CardTitle>Recent Reactions</CardTitle>
             <CardDescription>Your latest reaction videos</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Pass fetched reactions to RecentReactions */}
             <RecentReactions reactions={reactions} />
-          </CardContent>
-        </Card>
-        {/* Remove or update other components as needed */}
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Analytics Summary</CardTitle>
-            <CardDescription>Your content performance</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AnalyticsSummary /> {/* Keep placeholder for now */}
-          </CardContent>
-        </Card>
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle>Scheduled Posts</CardTitle>
-            <CardDescription>Upcoming content releases</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScheduledPosts /> {/* Keep placeholder for now */}
-          </CardContent>
-        </Card>
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Storage Usage</CardTitle>
-            <CardDescription>Your cloud storage allocation</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <StorageUsage /> {/* Keep placeholder for now */}
           </CardContent>
         </Card>
       </div>

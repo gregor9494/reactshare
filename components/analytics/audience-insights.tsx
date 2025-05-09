@@ -95,7 +95,7 @@ export function AudienceInsights() {
     )
   }
 
-if (!dataSource) {
+if (dataSource !== 'real_api') {
   return (
     <div className="h-[300px] w-full flex items-center justify-center">
       <p className="text-muted-foreground">No analytics data available yet.</p>

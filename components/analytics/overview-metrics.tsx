@@ -232,21 +232,11 @@ export function OverviewMetrics() {
         // Update social data state
         setSocialData(tempSocialData)
         
-        // Determine overall data source
-        if (tempSocialData.youtube.available || tempSocialData.tiktok.available) {
-          if ((tempSocialData.youtube.available && tempSocialData.youtube.source === 'real_api') &&
-              (tempSocialData.tiktok.available && tempSocialData.tiktok.source === 'real_api')) {
-            setDataSource('real_api')
-          } else if ((tempSocialData.youtube.available && tempSocialData.youtube.source === 'fallback') &&
-                     (tempSocialData.tiktok.available && tempSocialData.tiktok.source === 'fallback')) {
-            setDataSource('fallback')
-          } else {
-            setDataSource('mixed')
-          }
+        // Determine data source: only real API data
+        if (tempSocialData.youtube.source === 'real_api' || tempSocialData.tiktok.source === 'real_api') {
+          setDataSource('real_api')
         } else {
-          // No connected accounts
           setDataSource(null)
-          return
         }
         
         // Only use real data: exit if neither platform has real_api
@@ -254,6 +244,13 @@ export function OverviewMetrics() {
           setMetrics([])
           setIsLoading(false)
           return
+        }
+        // Zero out stats for non-real data sources
+        if (tempSocialData.youtube.source !== 'real_api') {
+          tempSocialData.youtube.stats = { views: 0, subscribers: 0, engagementRate: 0, shares: 0 }
+        }
+        if (tempSocialData.tiktok.source !== 'real_api') {
+          tempSocialData.tiktok.stats = { views: 0, followers: 0, engagementRate: 0, shares: 0 }
         }
         // Calculate combined metrics from all platforms
         
