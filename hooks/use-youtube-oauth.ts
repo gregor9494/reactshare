@@ -38,12 +38,13 @@ export default function useYouTubeOAuth(): UseYouTubeOAuthResult {
         'openid',
         'email',
         'profile',
+        'https://www.googleapis.com/auth/youtube', // Broader YouTube scope
         'https://www.googleapis.com/auth/youtube.readonly',
-        'https://www.googleapis.com/auth/youtube.force-ssl',
+        'https://www.googleapis.com/auth/youtube.force-ssl', // Retained for explicitness, though 'youtube' might cover it
         'https://www.googleapis.com/auth/youtube.upload'
       ].join(' '));
       googleOauthUrl.searchParams.set('access_type', 'offline');
-      googleOauthUrl.searchParams.set('prompt', 'consent');
+      googleOauthUrl.searchParams.set('prompt', 'select_account consent');
 
       console.log(`[YouTube OAuth] Redirecting to: ${googleOauthUrl.toString()}`);
       window.location.href = googleOauthUrl.toString();

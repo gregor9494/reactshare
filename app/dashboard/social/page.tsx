@@ -10,8 +10,9 @@ import { ConnectedAccounts } from "@/components/social/connected-accounts";
 import { AccountActivity } from "@/components/social/account-activity";
 import { YouTubeAnalytics } from "@/components/social/youtube-analytics";
 import { YouTubePlaylists } from "@/components/social/youtube-playlists";
+import { SocialErrorBanner } from "@/components/social/social-error-banner";
 // TikTokAnalytics is imported but used conditionally or within TikTokIntegration
-// import TikTokAnalytics from "@/components/social/tiktok-analytics"; 
+// import TikTokAnalytics from "@/components/social/tiktok-analytics";
 import { YouTubeIntegration } from "@/components/social/youtube-integration";
 import { TikTokIntegration } from "@/components/social/tiktok-integration";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +55,8 @@ export default function SocialPage() {
           Connect and manage your social media accounts to share your reactions across platforms.
         </p>
       </div>
+
+      <SocialErrorBanner />
       
       <Tabs defaultValue="accounts" className="w-full" onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 max-w-xl"> {/* Adjusted grid columns */}
