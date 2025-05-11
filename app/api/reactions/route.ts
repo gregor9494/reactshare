@@ -5,8 +5,11 @@ import { z } from 'zod';
 
 // Schema for creating a new reaction metadata entry
 const createReactionSchema = z.object({
-  source_video_url: z.string().url({ message: 'Invalid source video URL' }),
+  source_video_url: z.string().url({ message: 'Invalid source video URL' }).optional(),
+  source_video_id: z.string().optional(), // Allow creating from source_video_id
   title: z.string().optional(), // Optional title for now
+}).refine(data => data.source_video_url || data.source_video_id, {
+  message: 'Either source_video_url or source_video_id must be provided',
 });
 
 // Initialize Supabase client using SERVICE_ROLE_KEY for server-side operations
@@ -45,18 +48,69 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Invalid input: ${errorMessages}` }, { status: 400 });
   }
 
-  const { source_video_url, title } = validationResult.data;
+  const { source_video_url, source_video_id, title } = validationResult.data;
 
   try {
+    // Prepare the reaction data
+    const reactionData: any = {
+      user_id: userId,
+      title: title, // Add title if provided
+      status: 'pending_upload', // Initial status
+    };
+
+    // Set source_video_url. If source_video_id is provided, fetch the URL.
+    if (source_video_id) {
+      console.log(`POST /api/reactions: source_video_id ${source_video_id} provided. Fetching details.`);
+      const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
+        .from('source_videos')
+        .select('source_video_url, title, thumbnail_url')
+        .eq('id', source_video_id)
+        .eq('user_id', userId) // Ensure user owns the source video
+        .maybeSingle();
+
+      if (sourceVideoError) {
+        console.error('POST /api/reactions: Error fetching source video by ID:', sourceVideoError);
+        return NextResponse.json({ error: 'Failed to fetch source video details.' }, { status: 500 });
+      }
+
+      if (!sourceVideo || !sourceVideo.source_video_url) {
+        console.error(`POST /api/reactions: Source video not found or has no URL for id ${source_video_id}`);
+        return NextResponse.json({ error: 'Source video not found or is invalid.' }, { status: 400 });
+      }
+      
+      reactionData.source_video_url = sourceVideo.source_video_url;
+      
+      // Use source video title if reaction title not provided
+      if (!reactionData.title && sourceVideo.title) {
+        reactionData.title = sourceVideo.title;
+      }
+      
+      // Copy thumbnail if available
+      if (sourceVideo.thumbnail_url) {
+        reactionData.thumbnail_url = sourceVideo.thumbnail_url;
+      }
+      console.log(`POST /api/reactions: Using URL ${reactionData.source_video_url} from source_video ${source_video_id}`);
+
+    } else if (source_video_url) {
+      reactionData.source_video_url = source_video_url;
+      console.log(`POST /api/reactions: Using provided source_video_url ${source_video_url}`);
+    } else {
+      // This case should be caught by Zod schema validation, but as a safeguard:
+      return NextResponse.json({ error: 'Either source_video_url or source_video_id must be provided.' }, { status: 400 });
+    }
+    
     // Insert new reaction record into Supabase
+    console.log('POST /api/reactions: Inserting reaction with data:', {
+      userId: reactionData.user_id,
+      title: reactionData.title,
+      status: reactionData.status,
+      source_video_url: reactionData.source_video_url,
+      hasThumbnail: !!reactionData.thumbnail_url
+    });
+
     const { data, error } = await supabaseAdmin
       .from('reactions')
-      .insert({
-        user_id: userId,
-        source_video_url: source_video_url,
-        title: title, // Add title if provided
-        status: 'pending_upload', // Initial status
-      })
+      .insert(reactionData)
       .select() // Return the created record
       .single(); // Expecting a single record to be created
 
@@ -84,13 +138,24 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.user.id;
-
-    // Fetch reactions for the logged-in user from Supabase
-    const { data, error } = await supabaseAdmin
+    
+    // Parse query parameters
+    const url = new URL(request.url);
+    const sourceVideoId = url.searchParams.get('sourceVideoId');
+    
+    // Build the query
+    let query = supabaseAdmin
       .from('reactions')
       .select('*') // Select all columns for now
-      .eq('user_id', userId) // Filter by the authenticated user's ID
-      .order('created_at', { ascending: false }); // Order by creation date
+      .eq('user_id', userId); // Filter by the authenticated user's ID
+    
+    // Add source_video_id filter if provided
+    if (sourceVideoId) {
+      query = query.eq('source_video_id', sourceVideoId);
+    }
+    
+    // Execute the query
+    const { data, error } = await query.order('created_at', { ascending: false }); // Order by creation date
 
     if (error) {
       console.error('GET /api/reactions: Supabase Fetch Reactions Error:', error.message);

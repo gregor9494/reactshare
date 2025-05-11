@@ -19,7 +19,10 @@ const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
 export async function POST(request: NextRequest) {
   const session = await auth();
   
+  console.log('Schedule API called with session:', session?.user?.id ? 'Authenticated' : 'Unauthenticated');
+  
   if (!session?.user?.id) {
+    console.log('Schedule API: Unauthorized - No valid session');
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const data = await request.json();
+    const requestData = await request.json();
     const {
       reactionId,
       provider,
@@ -37,10 +40,22 @@ export async function POST(request: NextRequest) {
       privacy = 'private',
       tags = [],
       isImmediate = false
-    } = data;
+    } = requestData;
+    
+    console.log('Schedule API: Request body received', {
+      reactionId,
+      provider,
+      title: title ? `${title.substring(0, 20)}...` : 'missing',
+      hasDescription: !!description,
+      scheduledFor,
+      privacy,
+      tagsCount: tags?.length || 0,
+      isImmediate
+    });
     
     // Validate required fields
     if (!reactionId || !provider || !title || !scheduledFor) {
+      console.log('Schedule API: Missing required fields');
       return NextResponse.json(
         { error: 'Missing required fields (reactionId, provider, title, scheduledFor)' },
         { status: 400 }
@@ -52,6 +67,7 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     
     if (!isImmediate && scheduledTime <= now) {
+      console.log('Schedule API: Scheduled time is not in the future');
       return NextResponse.json(
         { error: 'Scheduled time must be in the future' },
         { status: 400 }
@@ -59,19 +75,31 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify the reaction exists and belongs to the user
+    console.log(`Schedule API: Looking for reaction with id ${reactionId} for user ${session.user.id}`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
       .select('id')
       .eq('id', reactionId)
       .eq('user_id', session.user.id)
-      .single();
+      .maybeSingle();
     
-    if (reactionError || !reaction) {
+    if (reactionError) {
+      console.log('Schedule API: Error fetching reaction:', reactionError);
+      return NextResponse.json(
+        { error: 'Error fetching reaction: ' + reactionError.message },
+        { status: 500 }
+      );
+    }
+    
+    if (!reaction) {
+      console.log(`Schedule API: Reaction not found with id ${reactionId} for user ${session.user.id}`);
       return NextResponse.json(
         { error: 'Reaction not found or unauthorized' },
         { status: 404 }
       );
     }
+    
+    console.log('Schedule API: Reaction found:', { id: reaction.id });
     
     // Check if the user has a connected account for the specified provider
     const { data: socialAccount, error: accountError } = await serviceClient

@@ -22,7 +22,10 @@ const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
 export async function POST(request: NextRequest) {
   const session = await auth();
   
+  console.log('YouTube upload API called with session:', session?.user?.id ? 'Authenticated' : 'Unauthenticated');
+  
   if (!session?.user?.id) {
+    console.log('YouTube upload API: Unauthorized - No valid session');
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
@@ -31,9 +34,20 @@ export async function POST(request: NextRequest) {
 
   try {
     // Parse request body
-    const { reactionId, title, description, privacy, tags = [], playlistId } = await request.json();
+    const requestData = await request.json();
+    const { reactionId, title, description, privacy, tags = [], playlistId } = requestData;
+    
+    console.log('YouTube upload API: Request body received', {
+      reactionId,
+      title: title ? `${title.substring(0, 20)}...` : 'missing',
+      hasDescription: !!description,
+      privacy,
+      tagsCount: tags?.length || 0,
+      hasPlaylistId: !!playlistId
+    });
 
     if (!reactionId || !title) {
+      console.log('YouTube upload API: Missing required fields');
       return NextResponse.json(
         { error: 'Missing required fields (reactionId, title)' },
         { status: 400 }
@@ -41,19 +55,34 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the reaction video from the database
+    console.log(`YouTube upload API: Looking for reaction with id ${reactionId} for user ${session.user.id}`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
       .select('*')
       .eq('id', reactionId)
       .eq('user_id', session.user.id)
-      .single();
+      .maybeSingle();
 
-    if (reactionError || !reaction) {
+    if (reactionError) {
+      console.log('YouTube upload API: Error fetching reaction:', reactionError);
+      return NextResponse.json(
+        { error: 'Error fetching reaction: ' + reactionError.message },
+        { status: 500 }
+      );
+    }
+    
+    if (!reaction) {
+      console.log(`YouTube upload API: Reaction not found with id ${reactionId} for user ${session.user.id}`);
       return NextResponse.json(
         { error: 'Reaction not found or unauthorized' },
         { status: 404 }
       );
     }
+    
+    console.log('YouTube upload API: Reaction found:', {
+      id: reaction.id,
+      hasVideoPath: !!reaction.reaction_video_storage_path
+    });
 
     if (!reaction.reaction_video_storage_path) {
       return NextResponse.json(

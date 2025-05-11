@@ -119,6 +119,53 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     
     setIsPublishing(true)
     
+    // First, check if we need to convert a source_video ID to a reaction ID
+    let actualReactionId = reactionId;
+    try {
+      // Check if this is a source_video ID by trying to fetch the corresponding reaction
+      console.log(`Looking up reaction for source video ID: ${reactionId}`);
+      // First try the lookup API
+      const response = await fetch(`/api/reactions/lookup?sourceVideoId=${reactionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          console.log(`Found reaction for source video ${reactionId}:`, data[0].id);
+          actualReactionId = data[0].id;
+        } else {
+          console.log(`No reaction found for source video ${reactionId}, will try to use it directly`);
+          
+          // If no reaction is found, we might need to create one
+          try {
+            console.log(`Attempting to create a reaction for source video ${reactionId}`);
+            const createResponse = await fetch('/api/reactions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                source_video_id: reactionId,
+                title: initialTitle || 'Untitled Reaction'
+              })
+            });
+            
+            if (createResponse.ok) {
+              const createData = await createResponse.json();
+              console.log(`Created new reaction for source video ${reactionId}:`, createData.id);
+              actualReactionId = createData.id;
+            } else {
+              console.error(`Failed to create reaction for source video ${reactionId}`);
+            }
+          } catch (createError) {
+            console.error("Error creating reaction:", createError);
+          }
+        }
+      } else {
+        console.log(`Error checking for reaction with source video ${reactionId}, will try to use it directly`);
+      }
+    } catch (error) {
+      console.error("Error converting source video ID to reaction ID:", error);
+    }
+    
     // Handle publishing to each selected platform
     // Get selected accounts
     const selectedAccounts = accounts.filter(account => selectedAccountIds.includes(account.id));
@@ -140,15 +187,17 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
         if (postMode === 'instant') {
           // For instant posting
           if (platform === 'youtube') {
-            console.log("Calling publishToYouTube...");
-            result = await publishToYouTube();
+            console.log("Calling publishToYouTube with reaction ID:", actualReactionId);
+            result = await publishToYouTube(actualReactionId);
             console.log("YouTube result:", result);
             
             if (result && result.success) {
               successfulPlatforms.push(platform);
               hasAnyRealSuccess = true;
             } else {
-              throw new Error(result?.error || "Failed to upload to YouTube");
+              // Handle both result types safely
+              const errorMessage = 'error' in result ? result.error : "Failed to upload to YouTube";
+              throw new Error(errorMessage);
             }
           } else if (platform === 'tiktok') {
             console.log("Calling publishToTikTok...");
@@ -167,7 +216,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
             console.log(`Scheduling immediate post for ${platform}...`);
             const immediateTime = new Date();
             immediateTime.setMinutes(immediateTime.getMinutes() + 1);
-            result = await scheduleForPlatform(platform, immediateTime);
+            result = await scheduleForPlatform(platform, immediateTime, actualReactionId);
             console.log(`${platform} scheduling result:`, result);
             
             if (result) {
@@ -180,7 +229,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
         } else {
           // For scheduled posting
           console.log(`Scheduling post for ${platform} at ${getScheduledDateTime()}...`);
-          result = await scheduleForPlatform(platform, getScheduledDateTime());
+          result = await scheduleForPlatform(platform, getScheduledDateTime(), actualReactionId);
           console.log(`${platform} scheduling result:`, result);
           
           if (result) {
@@ -249,8 +298,10 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   }
   
   // Publish specifically to YouTube
-  const publishToYouTube = async () => {
-    if (!reactionId) {
+  const publishToYouTube = async (targetReactionId?: string) => {
+    const useReactionId = targetReactionId || reactionId;
+    
+    if (!useReactionId) {
       console.error("No reactionId provided for YouTube upload");
       return { success: false, error: "Missing reaction ID" };
     }
@@ -260,7 +311,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       .filter(tag => tag.length > 0);
     
     console.log("YouTube upload parameters:", {
-      reactionId,
+      reactionId: useReactionId,
       title,
       description: description ? `${description.substring(0, 20)}...` : "(empty)",
       privacy,
@@ -274,7 +325,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       // Try direct upload first
       console.log("Attempting direct YouTube upload...");
       const result = await uploadToYouTube({
-        reactionId,
+        reactionId: useReactionId,
         title,
         description,
         privacy,
@@ -308,7 +359,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
         immediateTime.setMinutes(immediateTime.getMinutes() + 1);
         
         const result = await scheduleShare({
-          reactionId,
+          reactionId: useReactionId,
           provider: 'youtube',
           title,
           description,
@@ -338,8 +389,10 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   }
   
   // Publish specifically to TikTok
-  const publishToTikTok = async () => {
-    if (!reactionId) {
+  const publishToTikTok = async (targetReactionId?: string) => {
+    const useReactionId = targetReactionId || reactionId;
+    
+    if (!useReactionId) {
       console.error("No reactionId provided for TikTok upload");
       return { success: false, error: "Missing reaction ID" };
     }
@@ -349,7 +402,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       .filter(tag => tag.length > 0);
     
     console.log("TikTok upload parameters:", {
-      reactionId,
+      reactionId: useReactionId,
       title,
       description: description ? `${description.substring(0, 20)}...` : "(empty)",
       privacy,
@@ -365,7 +418,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          reactionId,
+          reactionId: useReactionId,
           title,
           description,
           privacy,
@@ -394,7 +447,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
         immediateTime.setMinutes(immediateTime.getMinutes() + 1);
         
         const result = await scheduleShare({
-          reactionId,
+          reactionId: useReactionId,
           provider: 'tiktok',
           title,
           description,
@@ -421,12 +474,14 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   }
   
   // Schedule for other platforms (placeholder for future implementation)
-  const scheduleForPlatform = async (platform: string, scheduledTime: Date) => {
-    if (!reactionId) return null
+  const scheduleForPlatform = async (platform: string, scheduledTime: Date, targetReactionId?: string) => {
+    const useReactionId = targetReactionId || reactionId;
+    
+    if (!useReactionId) return null
     
     // For now, just schedule the share in the database for future processing
     const result = await scheduleShare({
-      reactionId,
+      reactionId: useReactionId,
       provider: platform,
       title,
       description,
