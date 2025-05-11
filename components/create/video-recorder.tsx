@@ -17,15 +17,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
-const BUCKET_NAME = 'source-videos';
+const SOURCE_VIDEO_BUCKET_NAME = 'source-videos'; // For fetching source videos
+const REACTION_VIDEO_BUCKET_NAME = 'reaction-videos'; // For uploading new reactions
 
 interface VideoRecorderProps {
-  onRecordingComplete?: (blob: Blob) => void;
+  onRecordingComplete?: (blob: Blob, storagePath: string | null) => void; // Pass storagePath back
   sourceVideoId?: string;
+  reactionId: string; // This is now required to associate the upload
 }
 
-export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecorderProps) {
+export function VideoRecorder({ onRecordingComplete, sourceVideoId, reactionId }: VideoRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0)
   const [devices, setDevices] = useState<{ videoDevices: MediaDeviceInfo[], audioDevices: MediaDeviceInfo[] }>({
     videoDevices: [],
@@ -194,9 +198,9 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
             if (videoData.status === 'completed' && videoData.storage_path) {
               // Get the public URL from Supabase
               const { data: publicUrlData } = await supabase.storage
-                .from('source-videos') // Use the correct bucket name
+                .from(SOURCE_VIDEO_BUCKET_NAME)
                 .getPublicUrl(videoData.storage_path);
-                
+              
               if (publicUrlData?.publicUrl) {
                 console.log('Setting source video from API response:', publicUrlData.publicUrl);
                 // Set crossOrigin attribute to allow CORS content
@@ -305,7 +309,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
         // If no public_url but we have a storage_path, get the public URL
         if (sourceVideo.storage_path) {
           const { data: publicUrlData } = await supabase.storage
-            .from(BUCKET_NAME)
+            .from(SOURCE_VIDEO_BUCKET_NAME)
             .getPublicUrl(sourceVideo.storage_path);
 
           if (publicUrlData?.publicUrl) {
@@ -542,27 +546,20 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
       
       // Event handler for when recording stops
       mediaRecorder.onstop = () => {
+        console.log('[VideoRecorder] mediaRecorder.onstop triggered.'); // ADD THIS LOG
         const blob = new Blob(recordedChunksRef.current, {
           type: 'video/webm'
         })
+        console.log('[VideoRecorder] Blob created in onstop, size:', blob.size);
         
-        setRecordedBlob(blob)
+        setRecordedBlob(blob);
         
-        // Call the callback if provided with additional metadata about the recording
-        if (onRecordingComplete) {
-          // Add metadata for the position, size, and view mode
-          const metadata = {
-            viewMode,
-            position: viewMode === 'picture-in-picture' ? reactionPosition : null,
-            size: viewMode === 'picture-in-picture' ? reactionSize : null,
-          };
-          
-          // Store metadata in a custom property on the blob
-          const blobWithMetadata = blob as any;
-          blobWithMetadata.reactShareMetadata = metadata;
-          
-          onRecordingComplete(blobWithMetadata);
-        }
+        // Automatically start upload and finalize process
+        console.log('[VideoRecorder] Calling handleUploadAndFinalize from onstop.');
+        handleUploadAndFinalize(blob);
+
+        // The onRecordingComplete callback is now called from within handleUploadAndFinalize
+        // to ensure it's called after the upload attempt (success or failure).
       }
       
       // First set the recording flag, then start the animation and recording
@@ -589,9 +586,14 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
   }
   
   const stopRecording = () => {
+    console.log('[VideoRecorder] stopRecording called.'); // ADD THIS LOG
     // Stop the media recorder
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
+      console.log('[VideoRecorder] Attempting to stop mediaRecorder.');
+      mediaRecorderRef.current.stop();
+      console.log('[VideoRecorder] mediaRecorder.stop() called.');
+    } else {
+      console.log('[VideoRecorder] stopRecording: mediaRecorderRef.current is null or not recording.');
     }
     
     // Stop the timer
@@ -615,6 +617,94 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
     const remainingSeconds = seconds % 60
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
+
+  const handleUploadAndFinalize = async (blob: Blob) => {
+    if (!reactionId) {
+      console.error("Cannot upload: reactionId is missing.");
+      setUploadError("Cannot upload: reaction ID is missing. Please ensure the reaction metadata was created.");
+      if (onRecordingComplete) onRecordingComplete(blob, null);
+      return;
+    }
+    if (!blob) {
+      console.error("Cannot upload: recorded blob is missing.");
+      setUploadError("Cannot upload: recorded video data is missing.");
+      if (onRecordingComplete) onRecordingComplete(blob, null);
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    console.log('[VideoRecorder] handleUploadAndFinalize started for reactionId:', reactionId);
+
+    try {
+      const fileName = `reaction_${reactionId}_${Date.now()}.webm`;
+      const fileType = blob.type;
+      console.log('[VideoRecorder] Preparing to get upload info. FileName:', fileName, 'FileType:', fileType);
+
+      // 1. Get storagePath from backend
+      const uploadInfoResponse = await fetch('/api/reactions/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, fileType, reactionId }),
+      });
+      console.log('[VideoRecorder] Got response from /api/reactions/upload:', uploadInfoResponse.status);
+
+      if (!uploadInfoResponse.ok) {
+        const errorData = await uploadInfoResponse.json().catch(() => ({ error: 'Failed to parse error from /api/reactions/upload' }));
+        console.error('[VideoRecorder] Error getting upload info:', errorData);
+        throw new Error(errorData.error || 'Failed to get upload information.');
+      }
+      const { storagePath } = await uploadInfoResponse.json();
+
+      if (!storagePath) {
+        console.error('[VideoRecorder] Storage path not received from server.');
+        throw new Error('Storage path not received from server.');
+      }
+      
+      console.log(`[VideoRecorder] Received storage path: ${storagePath} for reaction ${reactionId}`);
+
+      // 2. Upload file to Supabase Storage
+      console.log('[VideoRecorder] Attempting to upload to Supabase Storage. Path:', storagePath);
+      const { error: supabaseUploadError } = await supabase.storage // Renamed to avoid conflict
+        .from(REACTION_VIDEO_BUCKET_NAME)
+        .upload(storagePath, blob, {
+          cacheControl: '3600',
+          upsert: true, // Overwrite if exists, though path should be unique
+        });
+
+      if (supabaseUploadError) {
+        console.error('[VideoRecorder] Supabase storage upload error:', supabaseUploadError);
+        throw new Error(`Failed to upload video to storage: ${supabaseUploadError.message}`);
+      }
+      
+      console.log(`[VideoRecorder] Successfully uploaded reaction video to ${storagePath}`);
+
+      // 3. Call PATCH endpoint to finalize
+      console.log('[VideoRecorder] Attempting to call PATCH /api/reactions/.../complete-upload');
+      const finalizeResponse = await fetch(`/api/reactions/${reactionId}/complete-upload`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath }),
+      });
+      console.log('[VideoRecorder] Got response from PATCH /api/reactions/.../complete-upload:', finalizeResponse.status);
+
+      if (!finalizeResponse.ok) {
+        const errorData = await finalizeResponse.json().catch(() => ({ error: 'Failed to parse error from PATCH complete-upload' }));
+        console.error('[VideoRecorder] Error finalizing upload:', errorData);
+        throw new Error(errorData.error || 'Failed to finalize upload.');
+      }
+
+      console.log(`[VideoRecorder] Successfully finalized upload for reaction ${reactionId}`);
+      if (onRecordingComplete) onRecordingComplete(blob, storagePath);
+
+    } catch (err: any) {
+      console.error('[VideoRecorder] Error in upload and finalize process:', err);
+      setUploadError(err.message || 'An unexpected error occurred during upload.');
+      if (onRecordingComplete) onRecordingComplete(blob, null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   return (
     <Card>
@@ -993,7 +1083,6 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
         {recordedBlob && !isRecording && (
           <div className="mt-4">
             <h3 className="text-sm font-medium mb-2">Preview Recording</h3>
-            
             <div>
               <h4 className="text-xs text-muted-foreground mb-1">Combined Video (Source + Reaction)</h4>
               <video
@@ -1002,15 +1091,32 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId }: VideoRecor
                 className="w-full rounded-md"
               />
             </div>
-            
-            <Alert className="mt-4">
-              <AlertTitle>Success!</AlertTitle>
-              <AlertDescription>
-                Your reaction has been recorded with the source video. The recording includes both
-                the original video and your reaction exactly as shown in the {viewMode === 'side-by-side' ?
-                'side-by-side' : 'picture-in-picture'} layout.
-              </AlertDescription>
-            </Alert>
+
+            {isUploading && (
+              <Alert className="mt-4" variant="default">
+                <AlertTriangle className="h-4 w-4 animate-spin" />
+                <AlertTitle>Uploading...</AlertTitle>
+                <AlertDescription>Your reaction video is being uploaded. Please wait.</AlertDescription>
+              </Alert>
+            )}
+
+            {uploadError && !isUploading && (
+              <Alert className="mt-4" variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Upload Failed</AlertTitle>
+                <AlertDescription>{uploadError}</AlertDescription>
+              </Alert>
+            )}
+
+            {!isUploading && !uploadError && ( // Show success only if not uploading and no error
+                 recordedBlob && // Ensure blob exists before showing success related to it
+                <Alert className="mt-4">
+                  <AlertTitle>Recording Complete!</AlertTitle>
+                  <AlertDescription>
+                    Your reaction has been recorded. If upload was successful, it's now linked to your reaction.
+                  </AlertDescription>
+                </Alert>
+            )}
           </div>
         )}
       </CardContent>

@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the reaction video from the database
-    console.log(`YouTube upload API: Looking for reaction with id ${reactionId} for user ${session.user.id}`);
+    console.log(`YouTube upload API: Attempting to fetch reaction. reactionId: "${reactionId}", userId: "${session.user.id}"`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
       .select('*')
@@ -64,9 +64,9 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (reactionError) {
-      console.log('YouTube upload API: Error fetching reaction:', reactionError);
+      console.error('YouTube upload API: Detailed error fetching reaction:', JSON.stringify(reactionError, null, 2));
       return NextResponse.json(
-        { error: 'Error fetching reaction: ' + reactionError.message },
+        { error: 'Error fetching reaction: ' + reactionError.message, details: reactionError },
         { status: 500 }
       );
     }

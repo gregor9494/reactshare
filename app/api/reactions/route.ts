@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       console.log(`POST /api/reactions: source_video_id ${source_video_id} provided. Fetching details.`);
       const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
         .from('source_videos')
-        .select('source_video_url, title, thumbnail_url')
+        .select('public_url, thumbnail_url') // Removed title from select
         .eq('id', source_video_id)
         .eq('user_id', userId) // Ensure user owns the source video
         .maybeSingle();
@@ -73,22 +73,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch source video details.' }, { status: 500 });
       }
 
-      if (!sourceVideo || !sourceVideo.source_video_url) {
-        console.error(`POST /api/reactions: Source video not found or has no URL for id ${source_video_id}`);
+      if (!sourceVideo || !sourceVideo.public_url) { // Changed source_video_url to public_url
+        console.error(`POST /api/reactions: Source video not found or has no public_url for id ${source_video_id}`);
         return NextResponse.json({ error: 'Source video not found or is invalid.' }, { status: 400 });
       }
       
-      reactionData.source_video_url = sourceVideo.source_video_url;
+      reactionData.source_video_url = sourceVideo.public_url; // Changed source_video_url to public_url
       
-      // Use source video title if reaction title not provided
-      if (!reactionData.title && sourceVideo.title) {
-        reactionData.title = sourceVideo.title;
-      }
+      // Title is now solely based on the request body, removed logic to pull from source_videos.title
       
-      // Copy thumbnail if available
-      if (sourceVideo.thumbnail_url) {
-        reactionData.thumbnail_url = sourceVideo.thumbnail_url;
-      }
+      // Removed logic to copy thumbnail_url to reactions table as it does not have this column.
+      // The thumbnail_url from source_videos can be joined if needed for display.
+      // if (sourceVideo.thumbnail_url) {
+      //   reactionData.thumbnail_url = sourceVideo.thumbnail_url;
+      // }
       console.log(`POST /api/reactions: Using URL ${reactionData.source_video_url} from source_video ${source_video_id}`);
 
     } else if (source_video_url) {

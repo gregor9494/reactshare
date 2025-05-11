@@ -232,87 +232,97 @@ export default function CreatePage() {
     }, 100);
   };
 
-  // Proceed to recording step
-  const proceedToRecording = () => {
+  // Proceed to recording step (after creating reaction metadata)
+  const proceedToRecording = async () => {
     console.log('proceedToRecording called');
-    console.log('sourceVideoId:', sourceVideoId);
-    console.log('sourceVideoUrl:', sourceVideoUrl);
-    console.log('selectedLibraryVideoId:', selectedLibraryVideoId);
-    
-    // Use selectedLibraryVideoId as a fallback if sourceVideoId is not set
-    const videoId = sourceVideoId || selectedLibraryVideoId;
-    
-    if (!videoId) {
-      console.error('Missing video ID');
+    const videoIdToUse = sourceVideoId || selectedLibraryVideoId;
+
+    if (!videoIdToUse) {
       setMessage({ type: 'error', text: 'Please select or download a source video first.' });
       return;
     }
     
-    // If sourceVideoUrl is not set but we have a videoId, create a fallback URL
-    const videoUrl = sourceVideoUrl || `Video ID: ${videoId}`;
-    
-    // Update the state with the fallback values if needed
-    if (!sourceVideoId && videoId) {
-      setSourceVideoId(videoId);
+    // Ensure sourceVideoUrl is set (it should be by now)
+    if (!sourceVideoUrl) {
+        // This case should ideally not happen if logic is correct
+        setMessage({ type: 'error', text: 'Source video URL is missing.' });
+        return;
     }
-    
-    if (!sourceVideoUrl && videoUrl) {
-      setSourceVideoUrl(videoUrl);
-    }
-    
-    console.log('Proceeding to recording step with video ID:', videoId);
-    console.log('Using video URL:', videoUrl);
-    
-    // If a library video was selected, its status is already 'completed'.
-    // If a URL was submitted, pollDownloadStatus would have moved to 'record' on completion.
-    // So, we can directly move to 'record' if sourceVideoId and sourceVideoUrl are set.
-    setCurrentStep('record');
-    setMessage(null); // Clear any previous messages
-  };
 
-  // Handle recording completion
-  const handleRecordingComplete = (blob: Blob) => {
-    console.log('Recording completed, blob type:', blob.type, 'size:', blob.size);
-    setRecordedBlob(blob);
-    // Create reaction metadata
-    createReactionMetadata(blob);
-  };
-
-  // Create reaction metadata
-  const createReactionMetadata = async (blob: Blob) => {
     setIsLoading(true);
-    
+    setMessage({ type: 'success', text: 'Preparing reaction session...' });
+
     try {
       // Step 1: Create reaction metadata via API route
+      // This should use source_video_id if available, or source_video_url
+      const payload: { source_video_id?: string | null; source_video_url?: string | null; title: string } = {
+        title: `Reaction to ${sourceVideoUrl}`, // Default title
+      };
+      if (sourceVideoId) { // Prefer source_video_id if we have it (from download or library)
+        payload.source_video_id = sourceVideoId;
+      } else if (sourceVideoUrl) { // Fallback to URL if ID isn't set (should be rare)
+        payload.source_video_url = sourceVideoUrl;
+      } else {
+        throw new Error("Neither source_video_id nor source_video_url is available to create reaction.");
+      }
+
       const metadataResponse = await fetch('/api/reactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source_video_url: sourceVideoUrl,
-          title: `Reaction to ${sourceVideoUrl}`, // Default title
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!metadataResponse.ok) {
         const errorResult = await metadataResponse.json();
-        setMessage({ type: 'error', text: errorResult.error || 'Failed to create reaction metadata.' });
-        setIsLoading(false);
-        return;
+        throw new Error(errorResult.error || 'Failed to create reaction metadata.');
       }
 
       const reactionMetadata = await metadataResponse.json();
+      if (!reactionMetadata.id) {
+        throw new Error('Reaction metadata created but ID is missing.');
+      }
       setReactionId(reactionMetadata.id);
+      console.log('Reaction metadata created, ID:', reactionMetadata.id);
       
-      // Move to the editing step
-      setCurrentStep('edit');
-      setIsLoading(false);
-      
-    } catch (err) {
-      console.error("Create reaction metadata error:", err);
-      setMessage({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
+      // Update sourceVideoId if it wasn't set but was derived (e.g. from selectedLibraryVideoId)
+      if (!sourceVideoId && videoIdToUse) {
+        setSourceVideoId(videoIdToUse);
+      }
+
+      setCurrentStep('record');
+      setMessage(null);
+    } catch (err: any) {
+      console.error("Error in proceedToRecording (creating reaction metadata):", err);
+      setMessage({ type: 'error', text: err.message || 'Failed to prepare reaction session.' });
+    } finally {
       setIsLoading(false);
     }
   };
+
+  // Handle recording completion (VideoRecorder now handles upload)
+  const handleRecordingComplete = (blob: Blob | null, storagePath: string | null) => {
+    if (blob && storagePath) {
+      console.log('Recording and upload completed. Blob type:', blob.type, 'size:', blob.size, 'Storage Path:', storagePath);
+      setRecordedBlob(blob); // Keep blob for potential preview/editing
+      // ReactionId should already be set.
+      // The VideoRecorder component has already updated the reaction record with the storage path.
+      setMessage({ type: 'success', text: 'Recording uploaded successfully!' });
+      setCurrentStep('edit'); // Or 'publish' if no editing step
+    } else if (blob && !storagePath) {
+      // Recording happened, but upload failed within VideoRecorder
+      console.error('Recording completed, but upload failed within VideoRecorder.');
+      setRecordedBlob(blob); // Still set blob for potential retry or local save
+      setMessage({ type: 'error', text: 'Recording was successful, but upload failed. Please check VideoRecorder logs.' });
+      // Stay on 'record' step or provide retry options
+    } else {
+      // Blob might be null if recording itself failed before upload attempt
+      console.error('Recording failed or no blob received.');
+       setMessage({ type: 'error', text: 'Recording failed. Please try again.' });
+    }
+  };
+
+  // Create reaction metadata - THIS FUNCTION IS NOW OBSOLETE as logic moved to proceedToRecording
+  // const createReactionMetadata = async (blob: Blob) => { ... }
 
   // Handle editing completion
   const handleEditingComplete = () => {
@@ -320,74 +330,25 @@ export default function CreatePage() {
     setCurrentStep('publish');
   };
 
-  // Handle publishing completion
+  // Handle publishing completion (Simplified, as upload is done by VideoRecorder)
   const handlePublishingComplete = async () => {
-    if (!recordedBlob || !reactionId) {
-      setMessage({ type: 'error', text: 'Missing recording or reaction ID.' });
+    // The reactionId should be set, and the video path should be in the DB.
+    // This function is now primarily for UI feedback or navigation after PublishOptions.
+    if (!reactionId) {
+      setMessage({ type: 'error', text: 'Reaction ID is missing. Cannot finalize publishing.' });
       return;
     }
     
-    setIsLoading(true);
+    // The actual social media publishing happens within PublishOptions component.
+    // This callback is for after that process.
+    setMessage({ type: 'success', text: 'Publishing process initiated!' });
     
-    try {
-      // Step 1: Get storage path from API route
-      const uploadPathResponse = await fetch('/api/reactions/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reactionId: reactionId,
-          fileName: `reaction-${Date.now()}.webm`,
-          fileType: recordedBlob.type,
-        }),
-      });
-
-      if (!uploadPathResponse.ok) {
-        const errorResult = await uploadPathResponse.json();
-        setMessage({ type: 'error', text: errorResult.error || 'Failed to get upload path.' });
-        setIsLoading(false);
-        return;
-      }
-
-      const uploadPathResult = await uploadPathResponse.json();
-      const storagePath = uploadPathResult.storagePath;
-
-      // Step 2: Upload the blob to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(storagePath, recordedBlob, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error('Supabase Upload Error:', uploadError);
-        setMessage({ type: 'error', text: uploadError.message || 'Failed to upload reaction video.' });
-        setIsLoading(false);
-        return;
-      }
-
-      // Step 3: Update the reaction metadata with the storage path and status
-      const { error: updateError } = await supabase
-        .from('reactions')
-        .update({ reaction_video_storage_path: storagePath, status: 'uploaded' })
-        .eq('id', reactionId);
-
-      if (updateError) {
-        console.error('Supabase Update Metadata Error:', updateError);
-      }
-
-      setMessage({ type: 'success', text: 'Reaction published successfully!' });
-      
-      // Redirect to the library page after success
-      setTimeout(() => {
-        router.push('/dashboard/library');
-      }, 2000);
-      
-    } catch (err) {
-      console.error("Publishing error:", err);
-      setMessage({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
-      setIsLoading(false);
-    }
+    // Optionally, navigate away or reset state after a delay
+    setTimeout(() => {
+      // router.push('/dashboard/library'); // Example navigation
+      setMessage(null); // Clear message
+      // Potentially reset other state for a new reaction
+    }, 3000);
   };
 
   // Poll for download status
@@ -648,12 +609,24 @@ export default function CreatePage() {
           <div className="mb-2 text-xs text-muted-foreground">
             Using source video ID: {sourceVideoId}
           </div>
-          <VideoRecorder
-            sourceVideoId={sourceVideoId || undefined}
-            onRecordingComplete={handleRecordingComplete}
-          />
+          {/* Ensure reactionId is available before rendering VideoRecorder */}
+          {reactionId ? (
+            <VideoRecorder
+              sourceVideoId={sourceVideoId || undefined}
+              reactionId={reactionId} // Pass the required reactionId
+              onRecordingComplete={handleRecordingComplete}
+            />
+          ) : (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>
+                Reaction session could not be initialized. Please go back and select a source video again.
+                {message?.text && ` Details: ${message.text}`}
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="mt-6 flex justify-between">
-            <Button variant="outline" onClick={() => setCurrentStep('source')} size="lg">
+            <Button variant="outline" onClick={() => { setCurrentStep('source'); setReactionId(null); /* Reset reactionId */ }} size="lg">
               Back to Source
             </Button>
             <Button onClick={() => setCurrentStep('edit')} size="lg" disabled={!recordedBlob}>

@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify the reaction exists and belongs to the user
-    console.log(`Schedule API: Looking for reaction with id ${reactionId} for user ${session.user.id}`);
+    console.log(`Schedule API: Attempting to fetch reaction. reactionId: "${reactionId}", userId: "${session.user.id}"`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
       .select('id')
@@ -84,9 +84,9 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     
     if (reactionError) {
-      console.log('Schedule API: Error fetching reaction:', reactionError);
+      console.error('Schedule API: Detailed error fetching reaction:', JSON.stringify(reactionError, null, 2));
       return NextResponse.json(
-        { error: 'Error fetching reaction: ' + reactionError.message },
+        { error: 'Error fetching reaction: ' + reactionError.message, details: reactionError },
         { status: 500 }
       );
     }
