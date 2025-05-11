@@ -84,7 +84,21 @@ export async function POST(request: NextRequest) {
       hasVideoPath: !!reaction.reaction_video_storage_path
     });
 
-    if (!reaction.reaction_video_storage_path) {
+    // Determine storage path: primary reaction path or fallback to source video
+    let videoPath = reaction.reaction_video_storage_path;
+    if (!videoPath && reaction.source_video_id) {
+      console.log(`YouTube upload API: Falling back to source_video_id ${reaction.source_video_id} path`);
+      const { data: srcVideo, error: srcError } = await serviceClient
+        .from('source_videos')
+        .select('storage_path')
+        .eq('id', reaction.source_video_id)
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      if (!srcError && srcVideo?.storage_path) {
+        videoPath = srcVideo.storage_path;
+      }
+    }
+    if (!videoPath) {
       return NextResponse.json(
         { error: 'Reaction video not found' },
         { status: 400 }
@@ -155,10 +169,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Download the video file from Supabase Storage
+:start_line:157
+-------
     const { data: fileData, error: fileError } = await serviceClient
       .storage
       .from('reactions')
-      .download(reaction.reaction_video_storage_path.replace('reactions/', ''));
+      .download(videoPath.replace('reactions/', ''));
 
     if (fileError) {
       console.error('Error downloading video file:', fileError);

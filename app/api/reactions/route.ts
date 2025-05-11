@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       console.log(`POST /api/reactions: source_video_id ${source_video_id} provided. Fetching details.`);
       const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
         .from('source_videos')
-        .select('public_url, thumbnail_url') // Removed title from select
+        .select('public_url, storage_path, thumbnail_url') // Also fetch storage_path
         .eq('id', source_video_id)
         .eq('user_id', userId) // Ensure user owns the source video
         .maybeSingle();
@@ -73,23 +73,29 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch source video details.' }, { status: 500 });
       }
 
-      if (!sourceVideo || !sourceVideo.public_url) { // Changed source_video_url to public_url
-        console.error(`POST /api/reactions: Source video not found or has no public_url for id ${source_video_id}`);
-        return NextResponse.json({ error: 'Source video not found or is invalid.' }, { status: 400 });
+      if (!sourceVideo || !sourceVideo.public_url || !sourceVideo.storage_path) {
+        let errorMsg = `Source video not found or is missing required fields for id ${source_video_id}.`;
+        if (sourceVideo && !sourceVideo.public_url) errorMsg += " Missing public_url.";
+        if (sourceVideo && !sourceVideo.storage_path) errorMsg += " Missing storage_path.";
+        console.error(`POST /api/reactions: ${errorMsg}`);
+        return NextResponse.json({ error: 'Source video not found or is invalid (missing URL/path).' }, { status: 400 });
       }
       
-      reactionData.source_video_url = sourceVideo.public_url; // Changed source_video_url to public_url
+      reactionData.source_video_url = sourceVideo.public_url;
+      reactionData.reaction_video_storage_path = sourceVideo.storage_path; // Set this for the reaction
+      reactionData.status = 'uploaded'; // Mark as uploaded since the video exists
       
-      // Title is now solely based on the request body, removed logic to pull from source_videos.title
+      // Title is now solely based on the request body
       
-      // Removed logic to copy thumbnail_url to reactions table as it does not have this column.
-      // The thumbnail_url from source_videos can be joined if needed for display.
+      // Thumbnail logic remains commented out as reactions table doesn't have thumbnail_url
       // if (sourceVideo.thumbnail_url) {
       //   reactionData.thumbnail_url = sourceVideo.thumbnail_url;
       // }
-      console.log(`POST /api/reactions: Using URL ${reactionData.source_video_url} from source_video ${source_video_id}`);
+      console.log(`POST /api/reactions: Using URL ${reactionData.source_video_url} and path ${reactionData.reaction_video_storage_path} from source_video ${source_video_id}. Status set to 'uploaded'.`);
 
     } else if (source_video_url) {
+      // This case is for when a new video URL is provided, implying a new recording will be uploaded later.
+      // So, status remains 'pending_upload' and no reaction_video_storage_path yet.
       reactionData.source_video_url = source_video_url;
       console.log(`POST /api/reactions: Using provided source_video_url ${source_video_url}`);
     } else {
@@ -108,7 +114,7 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabaseAdmin
       .from('reactions')
-      .insert(reactionData)
+      .insert([reactionData])
       .select() // Return the created record
       .single(); // Expecting a single record to be created
 

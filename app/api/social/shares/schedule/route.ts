@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     console.log(`Schedule API: Attempting to fetch reaction. reactionId: "${reactionId}", userId: "${session.user.id}"`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
-      .select('id')
+      .select('id, reaction_video_storage_path')
       .eq('id', reactionId)
       .eq('user_id', session.user.id)
       .maybeSingle();
@@ -99,7 +99,19 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log('Schedule API: Reaction found:', { id: reaction.id });
+    console.log('Schedule API: Reaction found:', {
+      id: reaction.id,
+      hasVideoPath: !!reaction.reaction_video_storage_path
+    });
+    
+    // Check if the reaction has a video file
+    if (!reaction.reaction_video_storage_path) {
+      console.log(`Schedule API: Reaction ${reactionId} does not have a video path`);
+      return NextResponse.json(
+        { error: 'Reaction video not found. Please complete the recording process before scheduling.' },
+        { status: 400 }
+      );
+    }
     
     // Check if the user has a connected account for the specified provider
     const { data: socialAccount, error: accountError } = await serviceClient

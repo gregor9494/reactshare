@@ -106,6 +106,40 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     return scheduledDate;
   }
 
+  // Check if reaction has a valid video path
+  const verifyReactionHasVideo = async (reactionId: string): Promise<boolean> => {
+    try {
+      console.log(`Verifying reaction ${reactionId} has a video path`);
+      const response = await fetch(`/api/reactions/${reactionId}`, {
+        method: 'GET',
+      });
+      
+      if (!response.ok) {
+        console.error(`Error fetching reaction details: ${response.status}`);
+        return false;
+      }
+      
+      const reaction = await response.json();
+      
+:start_line:122
+-------
+      if (!reaction.reaction_video_storage_path && !reaction.source_video_id) {
+        console.error(`Reaction ${reactionId} missing both video path and source_video_id`);
+        toast({
+          title: "Incomplete reaction video",
+          description: "No stored video or source ID available. Please re-record your reaction video.",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error verifying reaction video:", error);
+      return false;
+    }
+  }
+
   // Handle publishing to platforms
   const handlePublish = async () => {
     if (!reactionId) {
@@ -164,6 +198,13 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       }
     } catch (error) {
       console.error("Error converting source video ID to reaction ID:", error);
+    }
+    
+    // Verify this reaction has a valid video file before proceeding
+    const hasVideo = await verifyReactionHasVideo(actualReactionId);
+    if (!hasVideo) {
+      setIsPublishing(false);
+      return;
     }
     
     // Handle publishing to each selected platform
@@ -306,6 +347,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       return { success: false, error: "Missing reaction ID" };
     }
     
+    // Verify this reaction has a valid video file before proceeding
+    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    if (!hasVideo) {
+      return { success: false, error: "Reaction video not complete or missing" };
+    }
+    
     const tagsList = tags.split(',')
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0);
@@ -397,6 +444,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       return { success: false, error: "Missing reaction ID" };
     }
     
+    // Verify this reaction has a valid video file before proceeding
+    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    if (!hasVideo) {
+      return { success: false, error: "Reaction video not complete or missing" };
+    }
+    
     const tagsList = tags.split(',')
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0);
@@ -478,6 +531,17 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     const useReactionId = targetReactionId || reactionId;
     
     if (!useReactionId) return null
+    
+    // Verify this reaction has a valid video file before proceeding
+    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    if (!hasVideo) {
+      toast({
+        title: `${platform} scheduling failed`,
+        description: "Reaction video not complete or missing. Please re-record your reaction.",
+        variant: "destructive"
+      });
+      return null;
+    }
     
     // For now, just schedule the share in the database for future processing
     const result = await scheduleShare({
