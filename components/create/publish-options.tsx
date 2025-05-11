@@ -121,8 +121,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       
       const reaction = await response.json();
       
-:start_line:122
--------
+
       if (!reaction.reaction_video_storage_path && !reaction.source_video_id) {
         console.error(`Reaction ${reactionId} missing both video path and source_video_id`);
         toast({
