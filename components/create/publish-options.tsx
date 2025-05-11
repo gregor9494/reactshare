@@ -27,6 +27,7 @@ interface PublishOptionsProps {
 
 export function PublishOptions({ onPublishingComplete, reactionId, initialTitle }: PublishOptionsProps = {}) {
   const [date, setDate] = useState<Date | undefined>(new Date())
+  const [time, setTime] = useState<string>(format(new Date(), "HH:mm"))
   const [title, setTitle] = useState(initialTitle || "")
   const [description, setDescription] = useState("")
   const [tags, setTags] = useState("")
@@ -37,6 +38,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
   const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>('private')
   const [selectedPlaylist, setSelectedPlaylist] = useState<string>("none")
   const [youtubeUploadStatus, setYoutubeUploadStatus] = useState<string>("")
+  const [postMode, setPostMode] = useState<'schedule' | 'instant'>('schedule')
   
   // Get social account and share data/functions
   const { accounts } = useSocialAccounts();
@@ -93,6 +95,17 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     });
   }
   
+  // Combine date and time into a single Date object
+  const getScheduledDateTime = () => {
+    if (!date) return new Date();
+    
+    const [hours, minutes] = time.split(':').map(Number);
+    const scheduledDate = new Date(date);
+    scheduledDate.setHours(hours, minutes, 0, 0);
+    
+    return scheduledDate;
+  }
+
   // Handle publishing to platforms
   const handlePublish = async () => {
     if (!reactionId) {
@@ -106,109 +119,310 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
     
     setIsPublishing(true)
     
-    try {
-      // Handle publishing to each selected platform
-      // Get selected accounts
-      const selectedAccounts = accounts.filter(account => selectedAccountIds.includes(account.id));
+    // Handle publishing to each selected platform
+    // Get selected accounts
+    const selectedAccounts = accounts.filter(account => selectedAccountIds.includes(account.id));
+    const successfulPlatforms: string[] = [];
+    const failedPlatforms: string[] = [];
+    let hasAnyRealSuccess = false;
+    
+    // Debug information
+    console.log("Starting publish process with mode:", postMode);
+    console.log("Selected accounts:", selectedAccounts);
+    
+    for (const account of selectedAccounts) {
+      const platform = account.provider.toLowerCase();
+      console.log(`Attempting to publish to ${platform}...`);
       
-      for (const account of selectedAccounts) {
-        const platform = account.provider.toLowerCase();
-        if (platform === 'youtube') {
-          await publishToYouTube()
-        } else if (platform === 'tiktok') {
-          await publishToTikTok()
+      try {
+        let result;
+        
+        if (postMode === 'instant') {
+          // For instant posting
+          if (platform === 'youtube') {
+            console.log("Calling publishToYouTube...");
+            result = await publishToYouTube();
+            console.log("YouTube result:", result);
+            
+            if (result && result.success) {
+              successfulPlatforms.push(platform);
+              hasAnyRealSuccess = true;
+            } else {
+              throw new Error(result?.error || "Failed to upload to YouTube");
+            }
+          } else if (platform === 'tiktok') {
+            console.log("Calling publishToTikTok...");
+            result = await publishToTikTok();
+            console.log("TikTok result:", result);
+            
+            if (result && result.success) {
+              successfulPlatforms.push(platform);
+              hasAnyRealSuccess = true;
+            } else {
+              throw new Error(result?.error || "Failed to upload to TikTok");
+            }
+          } else {
+            // For other platforms that don't have direct posting yet
+            // Schedule for immediate posting (1 minute from now)
+            console.log(`Scheduling immediate post for ${platform}...`);
+            const immediateTime = new Date();
+            immediateTime.setMinutes(immediateTime.getMinutes() + 1);
+            result = await scheduleForPlatform(platform, immediateTime);
+            console.log(`${platform} scheduling result:`, result);
+            
+            if (result) {
+              successfulPlatforms.push(platform);
+              // This is just scheduled, not a real success for immediate posting
+            } else {
+              throw new Error(`Failed to schedule for ${platform}`);
+            }
+          }
         } else {
-          // For other platforms, schedule for future implementation
-          await scheduleForPlatform(platform)
+          // For scheduled posting
+          console.log(`Scheduling post for ${platform} at ${getScheduledDateTime()}...`);
+          result = await scheduleForPlatform(platform, getScheduledDateTime());
+          console.log(`${platform} scheduling result:`, result);
+          
+          if (result) {
+            successfulPlatforms.push(platform);
+            hasAnyRealSuccess = true; // Scheduling is considered a success for schedule mode
+          } else {
+            throw new Error(`Failed to schedule for ${platform}`);
+          }
         }
+      } catch (error) {
+        console.error(`Error publishing to ${platform}:`, error);
+        failedPlatforms.push(platform);
+        toast({
+          title: `${platform} publishing failed`,
+          description: error instanceof Error ? error.message : "An unknown error occurred",
+          variant: "destructive"
+        });
+        // Continue with other platforms even if one fails
       }
+    }
+    
+    // Show completion status
+    setPublishComplete(successfulPlatforms.length > 0);
+    setIsPublishing(false);
+    
+    console.log("Publishing results:", {
+      successfulPlatforms,
+      failedPlatforms,
+      hasAnyRealSuccess
+    });
+    
+    // Show success message if at least one platform succeeded
+    if (successfulPlatforms.length > 0) {
+      const platformNames = successfulPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
       
-      setPublishComplete(true)
-      
-      toast({
-        title: "Published successfully",
-        description: `Your reaction has been published to ${selectedAccounts.length} platform(s)`,
-        variant: "default"
-      })
+      // For instant mode, we need to be more careful about success messages
+      if (postMode === 'instant' && !hasAnyRealSuccess) {
+        toast({
+          title: "Publishing initiated",
+          description: `Your reaction has been submitted for processing on: ${platformNames}. Check the dashboard for status updates.`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: postMode === 'instant' ? "Published successfully" : "Scheduled successfully",
+          description: postMode === 'instant'
+            ? `Your reaction has been published to: ${platformNames}`
+            : `Your reaction has been scheduled for publishing to: ${platformNames}`,
+          variant: "default"
+        });
+      }
       
       if (onPublishingComplete) {
-        onPublishingComplete()
+        onPublishingComplete();
       }
-    } catch (error) {
+    }
+    
+    // Show overall failure message if all platforms failed
+    if (successfulPlatforms.length === 0 && failedPlatforms.length > 0) {
       toast({
-        title: "Publishing failed",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        title: "Publishing failed for all platforms",
+        description: "Please check the error messages and try again",
         variant: "destructive"
-      })
-      console.error("Publishing error:", error)
-    } finally {
-      setIsPublishing(false)
+      });
     }
   }
   
   // Publish specifically to YouTube
   const publishToYouTube = async () => {
-    if (!reactionId) return null
-    
-    const tagsList = tags.split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
-    
-    setYoutubeUploadStatus("Preparing video for upload...")
-    
-    const result = await uploadToYouTube({
-      reactionId,
-      title,
-      description,
-      privacy,
-      tags: tagsList,
-      playlistId: selectedPlaylist === "none" ? undefined : selectedPlaylist
-    })
-    
-    if (!result || !result.success) {
-      setYoutubeUploadStatus("")
-      throw new Error(result?.error || "Failed to upload to YouTube")
+    if (!reactionId) {
+      console.error("No reactionId provided for YouTube upload");
+      return { success: false, error: "Missing reaction ID" };
     }
     
-    setYoutubeUploadStatus("")
-    return result
-  }
-  
-  // Publish specifically to TikTok
-  const publishToTikTok = async () => {
-    if (!reactionId) return null
-    
     const tagsList = tags.split(',')
       .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
+      .filter(tag => tag.length > 0);
     
-    // Call the API to upload to TikTok
-    const response = await fetch('/api/social/tiktok/upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    console.log("YouTube upload parameters:", {
+      reactionId,
+      title,
+      description: description ? `${description.substring(0, 20)}...` : "(empty)",
+      privacy,
+      tagsCount: tagsList.length,
+      playlistId: selectedPlaylist === "none" ? "none" : selectedPlaylist
+    });
+    
+    setYoutubeUploadStatus("Preparing video for upload...");
+    
+    try {
+      // Try direct upload first
+      console.log("Attempting direct YouTube upload...");
+      const result = await uploadToYouTube({
         reactionId,
         title,
         description,
         privacy,
-        tags: tagsList
-      })
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || "Failed to upload to TikTok")
+        tags: tagsList,
+        playlistId: selectedPlaylist === "none" ? undefined : selectedPlaylist
+      });
+      
+      console.log("YouTube upload API response:", result);
+      
+      if (!result) {
+        console.error("YouTube upload returned null/undefined result");
+        throw new Error("YouTube upload failed with no response");
+      }
+      
+      if (!result.success) {
+        console.error("YouTube upload returned error:", result.error);
+        throw new Error(result.error || "Failed to upload to YouTube");
+      }
+      
+      setYoutubeUploadStatus("Upload successful!");
+      console.log("YouTube upload successful:", result);
+      return result;
+    } catch (error) {
+      console.error("YouTube direct upload failed, error details:", error);
+      setYoutubeUploadStatus("Direct upload failed, using scheduled upload...");
+      
+      try {
+        // Fallback to scheduling API if direct upload fails
+        console.log("Falling back to scheduled upload for YouTube...");
+        const immediateTime = new Date();
+        immediateTime.setMinutes(immediateTime.getMinutes() + 1);
+        
+        const result = await scheduleShare({
+          reactionId,
+          provider: 'youtube',
+          title,
+          description,
+          scheduledFor: immediateTime,
+          privacy,
+          tags: tagsList,
+          isImmediate: true
+        });
+        
+        console.log("YouTube scheduled upload result:", result);
+        
+        if (!result) {
+          console.error("YouTube scheduled upload returned null/undefined");
+          setYoutubeUploadStatus("");
+          throw new Error("Failed to schedule YouTube upload");
+        }
+        
+        setYoutubeUploadStatus("Scheduled for immediate processing");
+        // This is not a real success for instant posting, just scheduled
+        return { success: false, scheduled: true, videoId: result.id };
+      } catch (scheduleError) {
+        console.error("YouTube schedule fallback also failed:", scheduleError);
+        setYoutubeUploadStatus("");
+        throw scheduleError;
+      }
+    }
+  }
+  
+  // Publish specifically to TikTok
+  const publishToTikTok = async () => {
+    if (!reactionId) {
+      console.error("No reactionId provided for TikTok upload");
+      return { success: false, error: "Missing reaction ID" };
     }
     
-    const result = await response.json()
-    return result
+    const tagsList = tags.split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+    
+    console.log("TikTok upload parameters:", {
+      reactionId,
+      title,
+      description: description ? `${description.substring(0, 20)}...` : "(empty)",
+      privacy,
+      tagsCount: tagsList.length
+    });
+    
+    try {
+      // Call the API to upload to TikTok
+      console.log("Attempting direct TikTok upload...");
+      const response = await fetch('/api/social/tiktok/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reactionId,
+          title,
+          description,
+          privacy,
+          tags: tagsList
+        })
+      });
+      
+      console.log("TikTok upload response status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("TikTok upload error response:", errorData);
+        throw new Error(errorData.error || "Failed to upload to TikTok");
+      }
+      
+      const result = await response.json();
+      console.log("TikTok upload successful:", result);
+      return result;
+    } catch (error) {
+      console.error("TikTok direct upload failed, error details:", error);
+      
+      try {
+        // Fallback to scheduling API if direct upload fails
+        console.log("Falling back to scheduled upload for TikTok...");
+        const immediateTime = new Date();
+        immediateTime.setMinutes(immediateTime.getMinutes() + 1);
+        
+        const result = await scheduleShare({
+          reactionId,
+          provider: 'tiktok',
+          title,
+          description,
+          scheduledFor: immediateTime,
+          privacy,
+          tags: tagsList,
+          isImmediate: true
+        });
+        
+        console.log("TikTok scheduled upload result:", result);
+        
+        if (!result) {
+          console.error("TikTok scheduled upload returned null/undefined");
+          throw new Error("Failed to schedule TikTok upload");
+        }
+        
+        // This is not a real success for instant posting, just scheduled
+        return { success: false, scheduled: true, share: result };
+      } catch (scheduleError) {
+        console.error("TikTok schedule fallback also failed:", scheduleError);
+        throw scheduleError;
+      }
+    }
   }
   
   // Schedule for other platforms (placeholder for future implementation)
-  const scheduleForPlatform = async (platform: string) => {
-    if (!reactionId || !date) return null
+  const scheduleForPlatform = async (platform: string, scheduledTime: Date) => {
+    if (!reactionId) return null
     
     // For now, just schedule the share in the database for future processing
     const result = await scheduleShare({
@@ -216,9 +430,10 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
       provider: platform,
       title,
       description,
-      scheduledFor: date,
+      scheduledFor: scheduledTime,
       privacy,
-      tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+      tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+      isImmediate: postMode === 'instant'
     })
     
     if (!result) {
@@ -421,42 +636,69 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
           )}
         </div>
         
-        {/* Publishing Schedule */}
+        {/* Publishing Options */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium">Publishing Schedule</h3>
-          <div className="flex flex-col space-y-4 md:flex-row md:space-x-4 md:space-y-0">
-            <div className="space-y-2 md:w-1/2">
-              <p className="text-sm font-medium">Publish Date</p>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start text-left">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP") : "Select date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="space-y-2 md:w-1/2">
-              <p className="text-sm font-medium">Publish Time</p>
-              <Button variant="outline" className="w-full justify-start text-left">
-                <Clock className="mr-2 h-4 w-4" />
-                {date ? format(date, "h:mm a") : "Select time"}
-              </Button>
-            </div>
+          <h3 className="text-lg font-medium">Publishing Options</h3>
+          
+          <div className="flex space-x-4 mb-4">
+            <Button
+              variant={postMode === 'instant' ? "default" : "outline"}
+              onClick={() => setPostMode('instant')}
+              className="flex-1"
+            >
+              Post Instantly
+            </Button>
+            <Button
+              variant={postMode === 'schedule' ? "default" : "outline"}
+              onClick={() => setPostMode('schedule')}
+              className="flex-1"
+            >
+              Schedule for Later
+            </Button>
           </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="optimal" 
-              checked={useOptimalTimes}
-              onCheckedChange={(checked) => setUseOptimalTimes(checked === true)}
-            />
-            <label htmlFor="optimal" className="text-sm font-medium cursor-pointer">
-              Use AI-recommended optimal posting times for each platform
-            </label>
-          </div>
+          
+          {postMode === 'schedule' && (
+            <div className="space-y-4">
+              <div className="flex flex-col space-y-4 md:flex-row md:space-x-4 md:space-y-0">
+                <div className="space-y-2 md:w-1/2">
+                  <p className="text-sm font-medium">Publish Date</p>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-left">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {date ? format(date, "PPP") : "Select date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2 md:w-1/2">
+                  <p className="text-sm font-medium">Publish Time</p>
+                  <div className="relative">
+                    <Input
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="w-full pl-10"
+                    />
+                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="optimal"
+                  checked={useOptimalTimes}
+                  onCheckedChange={(checked) => setUseOptimalTimes(checked === true)}
+                />
+                <label htmlFor="optimal" className="text-sm font-medium cursor-pointer">
+                  Use AI-recommended optimal posting times for each platform
+                </label>
+              </div>
+            </div>
+          )}
           
           {useOptimalTimes && (
             <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700 mt-2">
@@ -483,21 +725,25 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle 
             {isPublishing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Publishing...
+                {postMode === 'instant' ? "Publishing..." : "Scheduling..."}
               </>
             ) : (
-              selectedAccountIds.length > 0 ? "Publish Now" : "Skip Publishing"
+              selectedAccountIds.length > 0
+                ? (postMode === 'instant' ? "Publish Now" : "Schedule Post")
+                : "Skip Publishing"
             )}
           </Button>
         </div>
         
         {/* Success message */}
         {publishComplete && (
-          <Alert className="bg-green-50 border-green-200 mt-4">
-            <Check className="h-4 w-4 text-green-500" />
-            <AlertDescription className="text-green-700">
+          <Alert className="bg-blue-50 border-blue-200 mt-4">
+            <Check className="h-4 w-4 text-blue-500" />
+            <AlertDescription className="text-blue-700">
               {selectedAccountIds.length > 0
-                ? `Your reaction video has been ${accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube') ? 'published to YouTube' : 'scheduled for publishing'} to ${selectedAccountIds.length} platform(s).`
+                ? postMode === 'instant'
+                  ? "Your reaction video has been submitted for processing. This may take some time to complete. Check the dashboard for status updates."
+                  : "Your reaction video has been scheduled for publishing at the selected time."
                 : "Your reaction video has been saved without publishing."}
             </AlertDescription>
           </Alert>

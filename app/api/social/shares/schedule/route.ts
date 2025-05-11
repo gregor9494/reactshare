@@ -28,14 +28,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const data = await request.json();
-    const { 
+    const {
       reactionId,
       provider,
-      title, 
+      title,
       description = '',
       scheduledFor,
       privacy = 'private',
-      tags = []
+      tags = [],
+      isImmediate = false
     } = data;
     
     // Validate required fields
@@ -46,11 +47,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Verify the scheduled time is in the future
+    // Verify the scheduled time is in the future, unless it's an immediate post
     const scheduledTime = new Date(scheduledFor);
     const now = new Date();
     
-    if (scheduledTime <= now) {
+    if (!isImmediate && scheduledTime <= now) {
       return NextResponse.json(
         { error: 'Scheduled time must be in the future' },
         { status: 400 }
@@ -88,20 +89,21 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Create the scheduled share
+    // Create the share record
     const { data: share, error } = await serviceClient
       .from('social_shares')
       .insert([{
         user_id: session.user.id,
         reaction_id: reactionId,
         provider: provider.toLowerCase(),
-        status: 'scheduled',
+        status: isImmediate ? 'pending' : 'scheduled',
         scheduled_for: scheduledTime.toISOString(),
         metadata: {
           title,
           description,
           privacy,
-          tags
+          tags,
+          isImmediate
         }
       }])
       .select()
@@ -115,10 +117,12 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       share,
-      message: `Post scheduled for ${scheduledTime.toLocaleString()}`
+      message: isImmediate
+        ? `Post submitted for immediate publishing`
+        : `Post scheduled for ${scheduledTime.toLocaleString()}`
     });
   } catch (error) {
     console.error('Unexpected error scheduling social share:', error);

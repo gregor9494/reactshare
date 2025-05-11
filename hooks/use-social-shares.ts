@@ -24,6 +24,7 @@ interface UseSocialSharesResult {
     scheduledFor: Date;
     privacy?: 'public' | 'unlisted' | 'private';
     tags?: string[];
+    isImmediate?: boolean;
   }) => Promise<SocialShare | null>;
   getAnalytics: (provider: string, shareId?: string, videoId?: string) => Promise<YouTubeVideoAnalytics | null>;
   fetchSharesByReactionId: (reactionId: string) => Promise<void>;
@@ -158,7 +159,8 @@ export default function useSocialShares(): UseSocialSharesResult {
     description = '',
     scheduledFor,
     privacy = 'private',
-    tags = []
+    tags = [],
+    isImmediate = false
   }: {
     reactionId: string;
     provider: string;
@@ -167,6 +169,7 @@ export default function useSocialShares(): UseSocialSharesResult {
     scheduledFor: Date;
     privacy?: 'public' | 'unlisted' | 'private';
     tags?: string[];
+    isImmediate?: boolean;
   }): Promise<SocialShare | null> => {
     try {
       const response = await fetch('/api/social/shares/schedule', {
@@ -181,7 +184,8 @@ export default function useSocialShares(): UseSocialSharesResult {
           description,
           scheduledFor: scheduledFor.toISOString(),
           privacy,
-          tags
+          tags,
+          isImmediate
         })
       });
 
@@ -195,11 +199,19 @@ export default function useSocialShares(): UseSocialSharesResult {
       // Refetch shares to include the new one
       await fetchShares();
       
-      toast({
-        title: 'Post Scheduled',
-        description: `Video "${title}" has been scheduled for ${scheduledFor.toLocaleString()}.`,
-        variant: 'default'
-      });
+      if (isImmediate) {
+        toast({
+          title: 'Post Submitted',
+          description: `Video "${title}" has been submitted for immediate posting to ${provider}.`,
+          variant: 'default'
+        });
+      } else {
+        toast({
+          title: 'Post Scheduled',
+          description: `Video "${title}" has been scheduled for ${scheduledFor.toLocaleString()}.`,
+          variant: 'default'
+        });
+      }
 
       return data.share;
     } catch (err) {
