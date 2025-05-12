@@ -7,9 +7,21 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check } from 'lucide-react';
 
+// Define a generic video interface that works for both source and reaction videos
+export interface VideoWithType {
+  id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  created_at: string;
+  status: string;
+  type: 'source' | 'reaction';
+  duration?: number;
+  original_url?: string;
+}
+
 interface SourceVideoGridProps {
-  videos: SourceVideo[];
-  onVideoSelect: (video: SourceVideo) => void;
+  videos: VideoWithType[];
+  onVideoSelect: (video: VideoWithType) => void;
   selectedVideoId?: string | null;
 }
 
@@ -52,10 +64,19 @@ export function SourceVideoGrid({ videos, onVideoSelect, selectedVideoId }: Sour
             )}
           </div>
           <CardContent className="p-3">
-            <h3 className="font-medium line-clamp-2 text-sm mb-1">{video.title || video.original_url}</h3>
-            <p className="text-xs text-muted-foreground">
-              Status: {video.status}
-            </p>
+            <h3 className="font-medium line-clamp-2 text-sm mb-1">
+              {video.title || video.original_url || 'Untitled Video'}
+            </h3>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                video.type === 'source' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+              }`}>
+                {video.type === 'source' ? 'Downloaded' : 'Reaction'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Status: {video.status}
+              </span>
+            </div>
             <p className="text-xs text-muted-foreground">
               Added: {new Date(video.created_at).toLocaleDateString()}
             </p>

@@ -92,3 +92,82 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+/**
+ * PATCH /api/reactions/[reactionId]
+ * Updates a reaction by ID
+ */
+export async function PATCH(request: NextRequest) {
+  // Extract reactionId from URL path segments
+  const url = new URL(request.url);
+  const segments = url.pathname.split('/').filter(Boolean);
+  const reactionId = segments[segments.length - 1];
+  const session = await auth();
+  
+  console.log(`[Reaction Update] PATCH request for reactionId: ${reactionId}, session:`, session?.user?.id ? 'Authenticated' : 'Unauthenticated');
+  
+  if (!session?.user?.id) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+  
+  const userId = session.user.id;
+  
+  if (!reactionId) {
+    return NextResponse.json(
+      { error: 'Reaction ID is missing from URL' },
+      { status: 400 }
+    );
+  }
+  
+  try {
+    // Parse the request body
+    const body = await request.json();
+    console.log(`[Reaction Update] Update data for reaction ${reactionId}:`, body);
+    
+    // Verify the reaction exists and belongs to the user
+    const { data: existingReaction, error: checkError } = await supabaseAdmin
+      .from('reactions')
+      .select('id')
+      .eq('id', reactionId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (checkError || !existingReaction) {
+      console.error(`[Reaction Update] Reaction ${reactionId} not found or doesn't belong to user ${userId}`);
+      return NextResponse.json(
+        { error: 'Reaction not found or access denied' },
+        { status: 404 }
+      );
+    }
+    
+    // Update the reaction
+    const { data: updatedReaction, error: updateError } = await supabaseAdmin
+      .from('reactions')
+      .update(body)
+      .eq('id', reactionId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    
+    if (updateError) {
+      console.error(`[Reaction Update] Error updating reaction ${reactionId}:`, updateError);
+      return NextResponse.json(
+        { error: 'Failed to update reaction: ' + updateError.message },
+        { status: 500 }
+      );
+    }
+    
+    console.log(`[Reaction Update] Successfully updated reaction ${reactionId}`);
+    return NextResponse.json(updatedReaction);
+    
+  } catch (e: any) {
+    console.error('[Reaction Update] Unexpected error:', e);
+    return NextResponse.json(
+      { error: 'An internal server error occurred: ' + e.message },
+      { status: 500 }
+    );
+  }
+}

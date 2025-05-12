@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VideoRecorder } from "@/components/create/video-recorder";
 import { VideoEditor } from "@/components/create/video-editor";
 import { PublishOptions } from "@/components/create/publish-options";
-import { SourceVideoGrid } from '@/components/create/source-video-grid'; // Added
+import { SourceVideoGrid, VideoWithType } from '@/components/create/source-video-grid'; // Updated import
 import { SourceVideo } from '@/lib/types'; // Added
 
 // Define Zod schema for the source URL form
@@ -201,7 +201,7 @@ export default function CreatePage() {
   };
 
   // Handle library video selection
-  const handleLibraryVideoSelect = (video: SourceVideo) => {
+  const handleLibraryVideoSelect = (video: VideoWithType) => {
     console.log('handleLibraryVideoSelect called with video:', video);
     
     setMessage(null);
@@ -586,7 +586,16 @@ export default function CreatePage() {
                 )}
                 {!isLoading && libraryVideos.length > 0 && (
                   <SourceVideoGrid
-                    videos={libraryVideos}
+                    videos={libraryVideos.map(video => ({
+                      id: video.id,
+                      title: video.title,
+                      thumbnail_url: video.thumbnail_url,
+                      created_at: video.created_at,
+                      status: video.status,
+                      type: 'source',
+                      duration: video.duration,
+                      original_url: video.original_url
+                    }))}
                     onVideoSelect={handleLibraryVideoSelect}
                     selectedVideoId={selectedLibraryVideoId}
                   />

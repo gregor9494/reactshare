@@ -58,9 +58,13 @@ export async function POST(request: Request) {
       status: 'pending_upload', // Initial status
     };
 
-    // Set source_video_url. If source_video_id is provided, fetch the URL.
+    // Set source_video_url and source_video_id if provided
     if (source_video_id) {
       console.log(`POST /api/reactions: source_video_id ${source_video_id} provided. Fetching details.`);
+      
+      // Store the source_video_id in the reaction record
+      reactionData.source_video_id = source_video_id;
+      
       const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
         .from('source_videos')
         .select('public_url, storage_path, thumbnail_url') // Also fetch storage_path
