@@ -80,7 +80,80 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    console.log(`[Reaction Detail] Found reaction: ${reaction.id}, has video path: ${!!reaction.reaction_video_storage_path}`);
+    console.log(`[Reaction Detail] Found reaction: ${reaction.id}, has video path: ${!!reaction.reaction_video_storage_path}, source_video_id: ${reaction.source_video_id || 'none'}`);
+    
+    // If the reaction doesn't have a video path but has a source_video_id, try to get the path from the source video
+    if (!reaction.reaction_video_storage_path && reaction.source_video_id) {
+      console.log(`[Reaction Detail] Reaction ${reaction.id} missing video path, checking source video ${reaction.source_video_id}`);
+      
+      try {
+        const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
+          .from('source_videos')
+          .select('storage_path, public_url')
+          .eq('id', reaction.source_video_id)
+          .maybeSingle();
+          
+        if (!sourceVideoError && sourceVideo) {
+          if (sourceVideo.storage_path) {
+            console.log(`[Reaction Detail] Found source video with storage path: ${sourceVideo.storage_path}, updating reaction`);
+            
+            // Update the reaction with the source video's storage path
+            const { data: updatedReaction, error: updateError } = await supabaseAdmin
+              .from('reactions')
+              .update({
+                reaction_video_storage_path: sourceVideo.storage_path,
+                status: 'uploaded'  // Update status since we now have a valid video path
+              })
+              .eq('id', reaction.id)
+              .select()
+              .single();
+              
+            if (!updateError && updatedReaction) {
+              console.log(`[Reaction Detail] Successfully updated reaction ${reaction.id} with storage path`);
+              return NextResponse.json(updatedReaction);
+            } else {
+              console.error(`[Reaction Detail] Failed to update reaction with storage path:`, updateError);
+            }
+          } else {
+            // Try to fetch the full source video details to ensure we have all necessary data
+            console.log(`[Reaction Detail] Source video missing storage_path, checking source videos library API`);
+            
+            // Make an internal request to the videos library API
+            const sourceResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/videos/library?id=${reaction.source_video_id}`);
+            
+            if (sourceResponse.ok) {
+              const sourceData = await sourceResponse.json();
+              
+              if (sourceData.videos && sourceData.videos.length > 0 && sourceData.videos[0].storage_path) {
+                console.log(`[Reaction Detail] Found source video with storage path from library API: ${sourceData.videos[0].storage_path}`);
+                
+                // Update the reaction with the source video's storage path
+                const { data: updatedReaction, error: updateError } = await supabaseAdmin
+                  .from('reactions')
+                  .update({
+                    reaction_video_storage_path: sourceData.videos[0].storage_path,
+                    status: 'uploaded'  // Update status since we now have a valid video path
+                  })
+                  .eq('id', reaction.id)
+                  .select()
+                  .single();
+                  
+                if (!updateError && updatedReaction) {
+                  console.log(`[Reaction Detail] Successfully updated reaction ${reaction.id} with storage path from library API`);
+                  return NextResponse.json(updatedReaction);
+                }
+              }
+            }
+            
+            console.log(`[Reaction Detail] Source video missing storage_path or could not be found through library API`);
+          }
+        } else {
+          console.log(`[Reaction Detail] Source video not found or missing storage path:`, sourceVideoError || 'No storage path');
+        }
+      } catch (sourceError) {
+        console.error(`[Reaction Detail] Error checking source video:`, sourceError);
+      }
+    }
     
     return NextResponse.json(reaction);
     

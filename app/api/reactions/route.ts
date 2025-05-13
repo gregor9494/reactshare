@@ -77,17 +77,26 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch source video details.' }, { status: 500 });
       }
 
-      if (!sourceVideo || !sourceVideo.public_url || !sourceVideo.storage_path) {
+      if (!sourceVideo || !sourceVideo.public_url) {
         let errorMsg = `Source video not found or is missing required fields for id ${source_video_id}.`;
         if (sourceVideo && !sourceVideo.public_url) errorMsg += " Missing public_url.";
-        if (sourceVideo && !sourceVideo.storage_path) errorMsg += " Missing storage_path.";
+        if (sourceVideo && !sourceVideo.storage_path) errorMsg += " Missing storage_path (but continuing).";
         console.error(`POST /api/reactions: ${errorMsg}`);
-        return NextResponse.json({ error: 'Source video not found or is invalid (missing URL/path).' }, { status: 400 });
+        
+        if (!sourceVideo || !sourceVideo.public_url) {
+          return NextResponse.json({ error: 'Source video not found or is missing public URL.' }, { status: 400 });
+        }
+        // We'll continue if just the storage_path is missing, but log the warning
       }
       
       reactionData.source_video_url = sourceVideo.public_url;
-      reactionData.reaction_video_storage_path = sourceVideo.storage_path; // Set this for the reaction
-      reactionData.status = 'uploaded'; // Mark as uploaded since the video exists
+      if (sourceVideo.storage_path) {
+        reactionData.reaction_video_storage_path = sourceVideo.storage_path; // Set this for the reaction
+        reactionData.status = 'uploaded'; // Mark as uploaded since the video exists
+        console.log(`POST /api/reactions: Using source video storage path: ${sourceVideo.storage_path}`);
+      } else {
+        console.warn(`POST /api/reactions: Source video ${source_video_id} missing storage_path, cannot set reaction_video_storage_path`);
+      }
       
       // Title is now solely based on the request body
       
