@@ -107,157 +107,102 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     return scheduledDate;
   }
 
-  // Check if reaction has a valid video path
+  // Check if the reaction (identified by reactionId, which is a reaction UUID) has a valid video path.
   const verifyReactionHasVideo = async (reactionId: string): Promise<boolean> => {
+    // `reactionId` here is expected to be the actual UUID of a reaction record,
+    // as determined by `handlePublish`.
+    if (!reactionId || !reactionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        console.error(`verifyReactionHasVideo called with invalid reactionId format: ${reactionId}`);
+        toast({ title: "Invalid Video ID", description: "Cannot verify video with an invalid ID format.", variant: "destructive" });
+        return false;
+    }
+
     try {
-      console.log(`Verifying reaction ${reactionId} has a video path`);
+      console.log(`Verifying reaction ${reactionId} has a video path.`);
       
-      // Special case for direct source videos - check them first
-      if (isSourceVideo) {
-        console.log(`This is a source video being used directly. Checking source video: ${reactionId}`);
-        try {
-          const directSourceResponse = await fetch(`/api/videos/library?id=${reactionId}`);
-          if (directSourceResponse.ok) {
-            const directSourceData = await directSourceResponse.json();
-            console.log("Direct source video data:", directSourceData);
-            
-            if (directSourceData.videos && directSourceData.videos.length > 0) {
-              const directSourceVideo = directSourceData.videos[0];
-              
-              // For source videos, either storage_path or public_url or original_url is acceptable
-              if (directSourceVideo.storage_path || directSourceVideo.public_url || directSourceVideo.original_url) {
-                console.log(`Source video ${reactionId} exists and has valid file references:`, {
-                  storage_path: directSourceVideo.storage_path,
-                  public_url: directSourceVideo.public_url,
-                  original_url: directSourceVideo.original_url
-                });
-                return true;
-              } else {
-                console.error(`Source video ${reactionId} exists but is missing all valid file references`);
-              }
-            } else {
-              console.error(`Source video ${reactionId} not found in response`);
-            }
-          } else {
-            console.error(`Failed to fetch source video ${reactionId}, status: ${directSourceResponse.status}`);
-          }
-        } catch (directSourceError) {
-          console.error("Error checking direct source video:", directSourceError);
-        }
-        
-        // If we get here for a source video and all checks failed, return false
-        console.error(`Source video ${reactionId} failed all validation checks`);
-        toast({
-          title: "Invalid source video",
-          description: "The selected source video has no accessible file. Please select a different video.",
-          variant: "destructive"
-        });
+      // Fetch the reaction record using the provided reactionId (UUID)
+      const response = await fetch(`/api/reactions/${reactionId}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error fetching reaction details for ${reactionId}: ${response.status}. Body: ${errorText}`);
+        toast({ title: "Video Not Found", description: `Could not retrieve details for video ID ${reactionId}.`, variant: "destructive" });
         return false;
       }
       
-      // For reaction videos, check the reaction record
-      try {
-        // Attempt to fetch the reaction and validate it
-        const response = await fetch(`/api/reactions/${reactionId}`, {
-          method: 'GET',
-        });
-        
-        if (!response.ok) {
-          console.error(`Error fetching reaction details: ${response.status}`);
-          return false;
-        }
-        
-        const reaction = await response.json();
-        console.log("Reaction details:", reaction);
-        
-        // If the reaction has a direct video path, it's valid
-        if (reaction.reaction_video_storage_path) {
-          console.log(`Reaction ${reactionId} has a valid video path: ${reaction.reaction_video_storage_path}`);
-          return true;
-        }
-        
-        // If the reaction has a source_video_id, check if that source video exists and has a storage path
-        if (reaction.source_video_id) {
-          console.log(`Reaction ${reactionId} has a source_video_id: ${reaction.source_video_id}, checking source video`);
-          
-          try {
-            const sourceResponse = await fetch(`/api/videos/library?id=${reaction.source_video_id}`);
-            console.log(`Source video API response status: ${sourceResponse.status}`);
-            
-            if (sourceResponse.ok) {
-              const sourceData = await sourceResponse.json();
-              console.log("Source video data:", sourceData);
-              
-              if (sourceData.videos && sourceData.videos.length > 0) {
-                const sourceVideo = sourceData.videos[0];
-                console.log("Source video details:", sourceVideo);
-                
-                // Check if source video has a storage_path OR public_url OR original_url - any of them can work
-                if (sourceVideo.storage_path || sourceVideo.public_url || sourceVideo.original_url) {
-                  console.log(`Source video ${reaction.source_video_id} has a valid file:`, {
-                    storage_path: sourceVideo.storage_path,
-                    public_url: sourceVideo.public_url,
-                    original_url: sourceVideo.original_url
-                  });
-                  
-                  // Try to update the reaction with the source video's storage path
-                  try {
-                    console.log(`Updating reaction ${reactionId} with source video details`);
-                    const updateData: any = {
-                      status: 'uploaded'
-                    };
-                    
-                    // Use storage_path if available
-                    if (sourceVideo.storage_path) {
-                      updateData.reaction_video_storage_path = sourceVideo.storage_path;
-                    }
-                    
-                    const updateResponse = await fetch(`/api/reactions/${reactionId}`, {
-                      method: 'PATCH',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify(updateData),
-                    });
-                    
-                    if (updateResponse.ok) {
-                      console.log(`Successfully updated reaction ${reactionId} with source video details`);
-                    } else {
-                      console.warn(`Failed to update reaction ${reactionId} with details, but continuing since source video exists`);
-                    }
-                  } catch (updateError) {
-                    console.error("Error updating reaction:", updateError);
-                  }
-                  
-                  // Even if update fails, we know the source video exists, so we can proceed
-                  return true;
-                } else {
-                  console.error(`Source video ${reaction.source_video_id} exists but is missing all file references`);
-                }
-              } else {
-                console.error(`Source video ${reaction.source_video_id} not found in response`);
-              }
-            } else {
-              console.error(`Failed to fetch source video ${reaction.source_video_id}, status: ${sourceResponse.status}`);
-            }
-          } catch (sourceError) {
-            console.error("Error checking source video:", sourceError);
-          }
-        }
-      } catch (reactionError) {
-        console.error("Error checking reaction details:", reactionError);
+      const reaction = await response.json();
+      console.log("Fetched reaction details for verification:", reaction);
+      
+      // 1. Check if the reaction itself has a direct video path
+      if (reaction.reaction_video_storage_path) {
+        console.log(`Reaction ${reactionId} has a direct video path: ${reaction.reaction_video_storage_path}`);
+        return true;
       }
       
-      // If we get here, neither the reaction has a video path nor the source video is valid
-      console.error(`Reaction ${reactionId} missing both video path and valid source_video_id`);
+      // 2. If not, check if it's linked to a source video that has a path
+      if (reaction.source_video_id) {
+        console.log(`Reaction ${reactionId} has no direct path, checking linked source_video_id: ${reaction.source_video_id}`);
+        
+        try {
+          const sourceResponse = await fetch(`/api/videos/library?id=${reaction.source_video_id}`);
+          console.log(`Source video API response status for ${reaction.source_video_id}: ${sourceResponse.status}`);
+          
+          if (sourceResponse.ok) {
+            const sourceData = await sourceResponse.json();
+            console.log("Source video data:", sourceData);
+            
+            if (sourceData.videos && sourceData.videos.length > 0) {
+              const sourceVideo = sourceData.videos[0];
+              console.log("Linked source video details:", sourceVideo);
+              
+              const sourceVideoPath = sourceVideo.storage_path || sourceVideo.public_url || sourceVideo.original_url;
+              if (sourceVideoPath) {
+                console.log(`Linked source video ${reaction.source_video_id} has a valid file reference: ${sourceVideoPath}`);
+                
+                // Attempt to update the reaction record with this source video's storage_path
+                // if the reaction itself was missing it. This is a good-to-have.
+                if (sourceVideo.storage_path && !reaction.reaction_video_storage_path) {
+                  console.log(`Attempting to update reaction ${reactionId} with storage_path from source video ${reaction.source_video_id}`);
+                  const updateData = { reaction_video_storage_path: sourceVideo.storage_path, status: 'uploaded' };
+                  
+                  // Fire-and-forget update, main goal is verification
+                  fetch(`/api/reactions/${reactionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData),
+                  }).then(updateResp => {
+                    if (updateResp.ok) console.log(`Successfully updated reaction ${reactionId} with source video storage path.`);
+                    else console.warn(`Failed to update reaction ${reactionId} with source video storage path, but verification succeeded based on source.`);
+                  }).catch(err => console.warn(`Error updating reaction ${reactionId} with source path (non-critical):`, err));
+                }
+                return true; // Valid path found via source video
+              } else {
+                console.error(`Linked source video ${reaction.source_video_id} exists but has no valid file reference (storage_path, public_url, or original_url).`);
+              }
+            } else {
+              console.error(`Linked source video ${reaction.source_video_id} not found in library response.`);
+            }
+          } else {
+            const errorText = await sourceResponse.text();
+            console.error(`Failed to fetch linked source video ${reaction.source_video_id}. Status: ${sourceResponse.status}. Body: ${errorText}`);
+          }
+        } catch (sourceError) {
+          console.error(`Error checking linked source video ${reaction.source_video_id}:`, sourceError);
+        }
+      }
+      
+      // If we reach here, no valid video path was found for the reaction
+      console.error(`Reaction ${reactionId} does not have a usable video path, either directly or via a linked source video.`);
       toast({
-        title: "Incomplete video",
-        description: "No stored video available. Please select a different video or record a new reaction.",
+        title: "Incomplete Video Data",
+        description: "The selected video is missing its file. Please choose another video or re-upload/re-record.",
         variant: "destructive"
       });
       return false;
+      
     } catch (error) {
-      console.error("Error verifying video:", error);
+      console.error(`Unexpected error in verifyReactionHasVideo for ${reactionId}:`, error);
+      toast({ title: "Verification Error", description: "An unexpected error occurred while verifying the video.", variant: "destructive" });
       return false;
     }
   }
@@ -276,154 +221,121 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     setIsPublishing(true)
     
     // Handle the ID based on whether it's a source video or reaction video
-    let actualReactionId = reactionId;
+    let actualReactionId = reactionId; // This will hold the UUID of the reaction to be published.
     
     if (isSourceVideo && reactionId) {
+      // This is a source video being published directly.
+      // The `reactionId` prop is a source_video_id.
+      // We need to find an existing reaction for this source_video_id or create a new one.
       try {
-        // For source videos, we need to convert the source_video_id to a reaction_id
-        console.log(`Looking up reaction for source video ID: ${reactionId}`);
+        console.log(`Source video publish: Looking up/creating reaction for sourceVideoId: ${reactionId}`);
         
-        // First try the lookup API to see if a reaction already exists
         const response = await fetch(`/api/reactions/lookup?sourceVideoId=${reactionId}`);
         if (response.ok) {
           const data = await response.json();
           if (data && data.length > 0) {
-            console.log(`Found reaction for source video ${reactionId}:`, data[0].id);
+            console.log(`Found existing reaction for sourceVideoId ${reactionId}: ${data[0].id}`);
             actualReactionId = data[0].id;
           } else {
-            console.log(`No reaction found for source video ${reactionId}, creating one`);
+            console.log(`No existing reaction found for sourceVideoId ${reactionId}, creating a new one.`);
             
-            // Before creating a reaction, get the source video details
             const sourceVideoResponse = await fetch(`/api/videos/library?id=${reactionId}`);
             let sourceVideoData = null;
             let storagePath = null;
-            let publicUrl = null;
             
             if (sourceVideoResponse.ok) {
               sourceVideoData = await sourceVideoResponse.json();
               if (sourceVideoData.videos && sourceVideoData.videos.length > 0) {
                 storagePath = sourceVideoData.videos[0].storage_path;
-                publicUrl = sourceVideoData.videos[0].public_url || sourceVideoData.videos[0].original_url;
-                console.log(`Retrieved source video details: storage_path=${storagePath}, public_url=${publicUrl}`);
+                console.log(`Retrieved source video details: storage_path=${storagePath}`);
               }
             }
             
-            // If no reaction is found, create one with the source video details
-            try {
-              console.log(`Creating a reaction for source video ${reactionId}`);
-              const createBody: any = {
-                source_video_id: reactionId,
-                title: initialTitle || 'Untitled Reaction',
-                status: 'uploaded' // Mark as uploaded since we're using an existing video
-              };
-              
-              if (storagePath) {
-                createBody.reaction_video_storage_path = storagePath;
+            const createBody: any = {
+              source_video_id: reactionId,
+              title: initialTitle || 'Untitled Reaction from Source',
+              status: 'uploaded'
+            };
+            if (storagePath) {
+              createBody.reaction_video_storage_path = storagePath;
+            }
+            
+            const createResponse = await fetch('/api/reactions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(createBody)
+            });
+            
+            if (createResponse.ok) {
+              const createData = await createResponse.json();
+              console.log(`Created new reaction ${createData.id} for sourceVideoId ${reactionId}`);
+              actualReactionId = createData.id;
+
+              // If storagePath was not available initially but sourceVideoData was fetched,
+              // and the created reaction doesn't have reaction_video_storage_path, try to update.
+              if (sourceVideoData && !storagePath && sourceVideoData.videos && sourceVideoData.videos.length > 0 && sourceVideoData.videos[0].storage_path && !createBody.reaction_video_storage_path) {
+                 console.log(`Attempting to update reaction ${actualReactionId} with storage_path from source video.`);
+                 const updateData = { reaction_video_storage_path: sourceVideoData.videos[0].storage_path, status: 'uploaded' };
+                 // Fire and forget is fine here, main thing is actualReactionId is set
+                 fetch(`/api/reactions/${actualReactionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData)
+                 }).catch(updateError => console.warn("Failed to update reaction with source storage path (non-critical)", updateError));
               }
-              
-              const createResponse = await fetch('/api/reactions', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(createBody)
-              });
-              
-              if (createResponse.ok) {
-                const createData = await createResponse.json();
-                console.log(`Created new reaction for source video ${reactionId}:`, createData.id);
-                actualReactionId = createData.id;
-                
-                // If we have source video data but couldn't include it in the initial create,
-                // update the reaction with additional details
-                if (sourceVideoData && (!storagePath || !createBody.reaction_video_storage_path)) {
-                  console.log(`Updating reaction ${createData.id} with additional source video details`);
-                  
-                  const updateData: any = {
-                    source_video_id: reactionId,
-                    status: 'uploaded'
-                  };
-                  
-                  // If the source video has a storage_path, use it for the reaction
-                  if (sourceVideoData.videos &&
-                      sourceVideoData.videos.length > 0) {
-                    
-                    if (sourceVideoData.videos[0].storage_path) {
-                      updateData.reaction_video_storage_path = sourceVideoData.videos[0].storage_path;
-                      console.log(`Using source video storage path: ${updateData.reaction_video_storage_path}`);
-                    }
-                    
-                    const updateResponse = await fetch(`/api/reactions/${createData.id}`, {
-                      method: 'PATCH',
-                      headers: {
-                        'Content-Type': 'application/json'
-                      },
-                      body: JSON.stringify(updateData)
-                    });
-                    
-                    if (updateResponse.ok) {
-                      console.log(`Successfully updated reaction with source video details`);
-                    } else {
-                      console.warn(`Failed to update reaction with source video details, but continuing`);
-                    }
-                  }
-                }
-              } else {
-                console.error(`Failed to create reaction for source video ${reactionId}`);
-                toast({
-                  title: "Error preparing video",
-                  description: "Failed to create reaction for the selected video",
-                  variant: "destructive"
-                });
-                setIsPublishing(false);
-                return;
-              }
-            } catch (createError) {
-              console.error("Error creating reaction:", createError);
-              toast({
-                title: "Error preparing video",
-                description: "Failed to create reaction for the selected video",
-                variant: "destructive"
-              });
-              setIsPublishing(false);
-              return;
+            } else {
+              const errorText = await createResponse.text();
+              console.error(`Failed to create reaction for sourceVideoId ${reactionId}. Status: ${createResponse.status}, Body: ${errorText}`);
+              throw new Error("Failed to create reaction for the selected source video.");
             }
           }
         } else {
-          console.error(`Error checking for reaction with source video ${reactionId}`);
-          toast({
-            title: "Error preparing video",
-            description: "Failed to check for existing reactions",
-            variant: "destructive"
-          });
-          setIsPublishing(false);
-          return;
+          const errorText = await response.text();
+          console.error(`Error looking up reaction for sourceVideoId ${reactionId}. Status: ${response.status}, Body: ${errorText}`);
+          throw new Error("Failed to check for existing reactions for the source video.");
         }
       } catch (error) {
-        console.error("Error converting source video ID to reaction ID:", error);
+        console.error("Error processing source video for publishing:", error);
         toast({
-          title: "Error preparing video",
-          description: "An unexpected error occurred while preparing the video",
+          title: "Error Preparing Video",
+          description: error instanceof Error ? error.message : "An unexpected error occurred while preparing the source video.",
           variant: "destructive"
         });
         setIsPublishing(false);
         return;
       }
-    } else {
-      // For reaction videos, we can use the ID directly
-      console.log(`Using reaction ID directly: ${reactionId}`);
-      
-      // If actualReactionId is not a valid UUID, it's probably not a proper reaction ID
-      if (!actualReactionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    } else if (!isSourceVideo && reactionId) {
+      // This is a regular reaction video publish.
+      // The `reactionId` prop is already the reaction_id.
+      // `actualReactionId` is already correctly set from `reactionId` (prop).
+      console.log(`Reaction video publish: Using provided reactionId directly: ${actualReactionId}`);
+      if (!actualReactionId || !actualReactionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
         console.error(`Invalid reaction ID format: ${actualReactionId}`);
         toast({
-          title: "Invalid video ID",
+          title: "Invalid Video ID",
           description: "The selected video has an invalid ID format. Please select a different video.",
           variant: "destructive"
         });
         setIsPublishing(false);
         return;
       }
+    } else if (!reactionId) {
+      // This case should ideally be caught by the check at the start of handlePublish (line 275)
+      toast({
+        title: "Missing Reaction ID",
+        description: "Cannot publish without a reaction video ID.",
+        variant: "destructive"
+      });
+      setIsPublishing(false);
+      return;
+    }
+
+    // Ensure actualReactionId is defined before proceeding
+    if (!actualReactionId) {
+        console.error("actualReactionId is undefined before verification. This indicates a logic flaw or an earlier unhandled error.");
+        toast({ title: "Internal Error", description: "Failed to determine the video ID for publishing. Please try again.", variant: "destructive"});
+        setIsPublishing(false);
+        return;
     }
     
     // Always verify that the reaction has a valid video file
@@ -468,8 +380,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
               throw new Error(errorMessage);
             }
           } else if (platform === 'tiktok') {
-            console.log("Calling publishToTikTok...");
-            result = await publishToTikTok();
+            console.log("Calling publishToTikTok with reaction ID:", actualReactionId);
+            result = await publishToTikTok(actualReactionId);
             console.log("TikTok result:", result);
             
             if (result && result.success) {
@@ -566,16 +478,14 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
   }
   
   // Publish specifically to YouTube
-  const publishToYouTube = async (targetReactionId?: string) => {
-    const useReactionId = targetReactionId || reactionId;
-    
-    if (!useReactionId) {
-      console.error("No reactionId provided for YouTube upload");
-      return { success: false, error: "Missing reaction ID" };
+  const publishToYouTube = async (reactionIdToPublish: string) => { // Changed: parameter is now required and named clearly
+    if (!reactionIdToPublish) { // This check is more of a safeguard
+      console.error("publishToYouTube called without a reactionIdToPublish");
+      return { success: false, error: "Internal error: Missing reaction ID for YouTube upload" };
     }
     
     // Verify this reaction has a valid video file before proceeding
-    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    const hasVideo = await verifyReactionHasVideo(reactionIdToPublish); // Use the passed-in ID
     if (!hasVideo) {
       return { success: false, error: "Reaction video not complete or missing" };
     }
@@ -585,7 +495,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       .filter(tag => tag.length > 0);
     
     console.log("YouTube upload parameters:", {
-      reactionId: useReactionId,
+      reactionId: reactionIdToPublish, // Use the passed-in ID
       title,
       description: description ? `${description.substring(0, 20)}...` : "(empty)",
       privacy,
@@ -597,9 +507,9 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     
     try {
       // Try direct upload first
-      console.log("Attempting direct YouTube upload...");
-      const result = await uploadToYouTube({
-        reactionId: useReactionId,
+      console.log("Attempting direct YouTube upload with reaction ID:", reactionIdToPublish);
+      const result = await uploadToYouTube({ // Hook from useYouTubeAccount
+        reactionId: reactionIdToPublish, // Use the passed-in ID
         title,
         description,
         privacy,
@@ -628,12 +538,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       
       try {
         // Fallback to scheduling API if direct upload fails
-        console.log("Falling back to scheduled upload for YouTube...");
+        console.log("Falling back to scheduled upload for YouTube with reaction ID:", reactionIdToPublish);
         const immediateTime = new Date();
         immediateTime.setMinutes(immediateTime.getMinutes() + 1);
         
-        const result = await scheduleShare({
-          reactionId: useReactionId,
+        const result = await scheduleShare({ // Hook from useSocialShares
+          reactionId: reactionIdToPublish, // Use the passed-in ID
           provider: 'youtube',
           title,
           description,
@@ -663,16 +573,14 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
   }
   
   // Publish specifically to TikTok
-  const publishToTikTok = async (targetReactionId?: string) => {
-    const useReactionId = targetReactionId || reactionId;
-    
-    if (!useReactionId) {
-      console.error("No reactionId provided for TikTok upload");
-      return { success: false, error: "Missing reaction ID" };
+  const publishToTikTok = async (reactionIdToPublish: string) => { // Changed: parameter is now required
+    if (!reactionIdToPublish) {
+      console.error("publishToTikTok called without a reactionIdToPublish");
+      return { success: false, error: "Internal error: Missing reaction ID for TikTok upload" };
     }
     
     // Verify this reaction has a valid video file before proceeding
-    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    const hasVideo = await verifyReactionHasVideo(reactionIdToPublish); // Use the passed-in ID
     if (!hasVideo) {
       return { success: false, error: "Reaction video not complete or missing" };
     }
@@ -682,7 +590,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       .filter(tag => tag.length > 0);
     
     console.log("TikTok upload parameters:", {
-      reactionId: useReactionId,
+      reactionId: reactionIdToPublish, // Use the passed-in ID
       title,
       description: description ? `${description.substring(0, 20)}...` : "(empty)",
       privacy,
@@ -691,14 +599,14 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     
     try {
       // Call the API to upload to TikTok
-      console.log("Attempting direct TikTok upload...");
+      console.log("Attempting direct TikTok upload with reaction ID:", reactionIdToPublish);
       const response = await fetch('/api/social/tiktok/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          reactionId: useReactionId,
+          reactionId: reactionIdToPublish, // Use the passed-in ID
           title,
           description,
           privacy,
@@ -722,12 +630,12 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       
       try {
         // Fallback to scheduling API if direct upload fails
-        console.log("Falling back to scheduled upload for TikTok...");
+        console.log("Falling back to scheduled upload for TikTok with reaction ID:", reactionIdToPublish);
         const immediateTime = new Date();
         immediateTime.setMinutes(immediateTime.getMinutes() + 1);
         
-        const result = await scheduleShare({
-          reactionId: useReactionId,
+        const result = await scheduleShare({ // Hook from useSocialShares
+          reactionId: reactionIdToPublish, // Use the passed-in ID
           provider: 'tiktok',
           title,
           description,
@@ -753,14 +661,16 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     }
   }
   
-  // Schedule for other platforms (placeholder for future implementation)
-  const scheduleForPlatform = async (platform: string, scheduledTime: Date, targetReactionId?: string) => {
-    const useReactionId = targetReactionId || reactionId;
-    
-    if (!useReactionId) return null
+  // Schedule for other platforms
+  const scheduleForPlatform = async (platform: string, scheduledTime: Date, reactionIdToSchedule: string) => { // Changed: parameter is now required
+    if (!reactionIdToSchedule) {
+      console.error(`scheduleForPlatform (${platform}) called without a reactionIdToSchedule`);
+      // For robustness, though handlePublish should ensure this is passed.
+      return null;
+    }
     
     // Verify this reaction has a valid video file before proceeding
-    const hasVideo = await verifyReactionHasVideo(useReactionId);
+    const hasVideo = await verifyReactionHasVideo(reactionIdToSchedule); // Use the passed-in ID
     if (!hasVideo) {
       toast({
         title: `${platform} scheduling failed`,
@@ -772,7 +682,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     
     // For now, just schedule the share in the database for future processing
     const result = await scheduleShare({
-      reactionId: useReactionId,
+      reactionId: reactionIdToSchedule, // Use the passed-in ID
       provider: platform,
       title,
       description,

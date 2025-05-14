@@ -78,11 +78,11 @@ export async function POST(request: NextRequest) {
     console.log(`Schedule API: Attempting to fetch reaction. reactionId: "${reactionId}", userId: "${session.user.id}"`);
     const { data: reaction, error: reactionError } = await serviceClient
       .from('reactions')
-      .select('id, reaction_video_storage_path')
+      .select('id, reaction_video_storage_path, source_video_url') // Include source_video_url for fallback logic
       .eq('id', reactionId)
       .eq('user_id', session.user.id)
       .maybeSingle();
-    
+
     if (reactionError) {
       console.error('Schedule API: Detailed error fetching reaction:', JSON.stringify(reactionError, null, 2));
       return NextResponse.json(
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    
+
     if (!reaction) {
       console.log(`Schedule API: Reaction not found with id ${reactionId} for user ${session.user.id}`);
       return NextResponse.json(
@@ -98,17 +98,24 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
-    
+
+    let videoPath = reaction.reaction_video_storage_path;
+    // Fallback to source_video_url if direct path is missing
+    if (!videoPath && reaction.source_video_url) {
+      console.log(`Schedule API: Falling back to source_video_url: ${reaction.source_video_url}`);
+      videoPath = reaction.source_video_url;
+    }
     console.log('Schedule API: Reaction found:', {
       id: reaction.id,
-      hasVideoPath: !!reaction.reaction_video_storage_path
+      directVideoPath: videoPath
     });
+
     
-    // Check if the reaction has a video file
-    if (!reaction.reaction_video_storage_path) {
-      console.log(`Schedule API: Reaction ${reactionId} does not have a video path`);
+    // Check if a video file path is available (either direct or via source)
+    if (!videoPath) {
+      console.log(`Schedule API: Reaction ${reactionId} does not have a usable video path (direct or via source).`);
       return NextResponse.json(
-        { error: 'Reaction video not found. Please complete the recording process before scheduling.' },
+        { error: 'Reaction video not found or is incomplete. Please ensure the video is processed before scheduling.' },
         { status: 400 }
       );
     }
@@ -119,7 +126,6 @@ export async function POST(request: NextRequest) {
       .select('id, provider')
       .eq('user_id', session.user.id)
       .eq('provider', provider.toLowerCase())
-      .eq('status', 'active')
       .single();
     
     if (accountError || !socialAccount) {

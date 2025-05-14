@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     // Step 1: Get the public_url from the source_videos table
     const { data: sourceVideo, error: sourceVideoError } = await serviceClient
       .from('source_videos')
-      .select('public_url') // Changed from source_video_url
+      .select('public_url')
       .eq('id', sourceVideoId)
       .eq('user_id', session.user.id) // Ensure user owns the source video
       .maybeSingle();
@@ -61,17 +61,17 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!sourceVideo || !sourceVideo.public_url) { // Changed from source_video_url
+    if (!sourceVideo || !sourceVideo.public_url) {
       console.log(`Reaction lookup API: Source video not found or has no public_url for id ${sourceVideoId}`);
       return NextResponse.json({ error: 'Source video not found or missing public URL' }, { status: 404 });
     }
-    
+
     // Step 2: Query the reactions table using the fetched public_url
-    console.log(`Reaction lookup API: Looking for reactions with public_url ${sourceVideo.public_url}`); // Changed from source_video_url
+    console.log(`Reaction lookup API: Looking for reactions with public_url ${sourceVideo.public_url}`);
     const { data, error } = await serviceClient
       .from('reactions')
       .select('id, title, status')
-      .eq('source_video_url', sourceVideo.public_url) // This assumes reactions table still uses source_video_url. We might need to check this too.
+      .eq('source_video_url', sourceVideo.public_url)
       .eq('user_id', session.user.id);
     
     if (error) {

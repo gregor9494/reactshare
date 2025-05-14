@@ -169,12 +169,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Download the video file from Supabase Storage
-:start_line:157
--------
     const { data: fileData, error: fileError } = await serviceClient
       .storage
-      .from('reactions')
-      .download(videoPath.replace('reactions/', ''));
+      .from('reaction-videos')
+      .download(videoPath);
 
     if (fileError) {
       console.error('Error downloading video file:', fileError);

@@ -3,6 +3,7 @@ export interface Reaction {
   id: string;
   user_id: string;
   source_video_url: string;
+  source_video_id?: string;
   reaction_video_storage_path: string | null;
   title: string | null;
   status: string; // e.g., 'pending_upload', 'uploaded', 'processing', 'published', 'error'

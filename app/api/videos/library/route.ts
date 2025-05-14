@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { auth } from '@/auth'; // Assuming your auth setup is here
+import { auth } from '@/auth';
 import { SourceVideo } from '@/lib/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service role key for backend operations
-
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('Supabase URL or Service Role Key missing for server-side operations.');
-  // Potentially throw an error or handle this case appropriately
 }
-
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
 export async function GET(request: Request) {
@@ -25,92 +22,55 @@ export async function GET(request: Request) {
     const folderId = url.searchParams.get('folderId');
     const videoId = url.searchParams.get('id');
 
-    console.log('API Request URL:', request.url);
-    console.log('Parsed URL parameters - folderId:', folderId, 'videoId:', videoId);
-    console.log('User ID:', userId);
-
-    // If a specific video ID is requested, fetch just that video
+    // Fetch a specific video if ID is provided
     if (videoId) {
-      console.log('Fetching specific video with ID:', videoId);
-      
-      const { data, error } = await supabase
+      const { data: videoArray, error: videoError } = await supabase
         .from('source_videos')
         .select('*')
         .eq('id', videoId)
-        .eq('user_id', userId)
-        .single();
+        .eq('user_id', userId);
 
-      console.log('Supabase query result - data:', data, 'error:', error);
-
-      if (error) {
-        console.error('Error fetching specific source video:', error);
-        return NextResponse.json({ error: 'Failed to fetch source video', details: error.message }, { status: 500 });
+      if (videoError) {
+        console.error('Error fetching specific source video:', videoError);
+        return NextResponse.json({ error: 'Failed to fetch source video', details: videoError.message }, { status: 500 });
       }
-
-      if (!data) {
-        console.log('No video found with ID:', videoId);
+      if (!videoArray || videoArray.length === 0) {
         return NextResponse.json({ error: 'Video not found' }, { status: 404 });
       }
-
-      console.log('Returning single video:', data);
+      const videoRecord = videoArray[0];
       return NextResponse.json({
-        videos: [data] as SourceVideo[],
+        videos: [videoRecord] as SourceVideo[],
         folders: []
       }, { status: 200 });
     }
 
-    // Fetch folders for the user
+    // Fetch folders
     let folders = [];
-    try {
-      const { data, error } = await supabase
-        .from('folders')
-        .select('*')
-        .eq('user_id', userId)
-        .order('name', { ascending: true });
-
-      if (!error) {
-        folders = data;
-      } else {
-        // If the error is that the table doesn't exist, we'll just continue with empty folders
-        if (error.code === '42P01') { // Table doesn't exist
-          console.warn('Folders table does not exist yet. Continuing with empty folders array.');
-        } else {
-          console.error('Error fetching folders:', error);
-        }
-      }
-    } catch (folderError) {
-      console.warn('Error fetching folders, continuing with empty folders array:', folderError);
+    const { data: foldersData, error: folderError } = await supabase
+      .from('folders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('name', { ascending: true });
+    if (!folderError && foldersData) {
+      folders = foldersData;
     }
 
-    // Build query for videos
+    // Build query for completed videos
     let query = supabase
       .from('source_videos')
       .select('*')
       .eq('user_id', userId)
-      .eq('status', 'completed'); // Only fetch completed videos
+      .eq('status', 'completed');
 
-    // If folderId is provided and folders table exists, filter by folder
-    if (folderId && folders.length > 0) {
+    if (folderId) {
       if (folderId === 'null') {
-        // Special case: show videos without a folder
-        try {
-          query = query.is('folder_id', null);
-        } catch (error) {
-          console.warn('Could not filter by folder_id, the column might not exist:', error);
-        }
+        query = query.is('folder_id', null);
       } else {
-        // Show videos in the specified folder
-        try {
-          query = query.eq('folder_id', folderId);
-        } catch (error) {
-          console.warn('Could not filter by folder_id, the column might not exist:', error);
-        }
+        query = query.eq('folder_id', folderId);
       }
     }
 
-    // Execute the query
     const { data, error } = await query.order('created_at', { ascending: false });
-
     if (error) {
       console.error('Error fetching completed source videos:', error);
       return NextResponse.json({ error: 'Failed to fetch completed source videos', details: error.message }, { status: 500 });
@@ -118,12 +78,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       videos: data as SourceVideo[],
-      folders: folders || [],
+      folders,
       currentFolderId: folderId
     }, { status: 200 });
-
   } catch (err) {
-    console.error('API Error fetching completed source videos:', err);
+    console.error('API Error fetching source videos:', err);
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }

@@ -62,8 +62,6 @@ export async function POST(request: Request) {
     if (source_video_id) {
       console.log(`POST /api/reactions: source_video_id ${source_video_id} provided. Fetching details.`);
       
-      // Store the source_video_id in the reaction record
-      reactionData.source_video_id = source_video_id;
       
       const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
         .from('source_videos')
@@ -166,10 +164,6 @@ export async function GET(request: Request) {
       .select('*') // Select all columns for now
       .eq('user_id', userId); // Filter by the authenticated user's ID
     
-    // Add source_video_id filter if provided
-    if (sourceVideoId) {
-      query = query.eq('source_video_id', sourceVideoId);
-    }
     
     // Execute the query
     const { data, error } = await query.order('created_at', { ascending: false }); // Order by creation date
