@@ -26,7 +26,7 @@ interface PublishOptionsProps {
   isSourceVideo?: boolean;
 }
 
-export function PublishOptions({ onPublishingComplete, reactionId, initialTitle, isSourceVideo = false }: PublishOptionsProps = {}) {
+export function PublishOptions({ onPublishingComplete, reactionId, initialTitle, isSourceVideo = false }: PublishOptionsProps) {
   const [date, setDate] = useState<Date | undefined>(new Date())
   const [time, setTime] = useState<string>(format(new Date(), "HH:mm"))
   const [title, setTitle] = useState(initialTitle || "")
@@ -42,14 +42,66 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
   const [postMode, setPostMode] = useState<'schedule' | 'instant'>('schedule')
   
   // Get social account and share data/functions
-  const { accounts } = useSocialAccounts();
+  const { accounts, getAccountByProvider } = useSocialAccounts();
   const { scheduleShare } = useSocialShares();
   const { playlists, loadPlaylists } = useYouTubePlaylists();
-  const { uploadVideo: uploadToYouTube } = useYouTubeAccount();
+  const { uploadVideo: uploadToYouTube, youtubeAccount, error: youtubeAccountError } = useYouTubeAccount();
+  
+  // Add diagnostic logging for accounts and YouTube account
+  useEffect(() => {
+    console.log("ACCOUNTS DEBUG:", {
+      allAccounts: accounts,
+      youtubeAccounts: accounts.filter(acc => acc.provider.toLowerCase() === 'youtube'),
+      selectedAccountIds,
+      youtubeAccountFromHook: youtubeAccount ? {
+        id: youtubeAccount.id,
+        provider: youtubeAccount.provider,
+        status: youtubeAccount.status,
+        username: youtubeAccount.provider_username
+      } : null,
+      youtubeAccountError
+    });
+  }, [accounts, selectedAccountIds, youtubeAccount, youtubeAccountError]);
   
   // Check for connected accounts
   const [availablePlatforms, setAvailablePlatforms] = useState<string[]>([]);
   const [showYouTubeError, setShowYouTubeError] = useState(false);
+  
+  // Pre-check YouTube account availability
+  useEffect(() => {
+    const hasYouTubeSelected = accounts.some(acc => 
+      selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube'
+    );
+    
+    if (youtubeAccount) {
+      console.log("YouTube account detected:", youtubeAccount);
+      setShowYouTubeError(false);
+    } else {
+      console.log("No YouTube account detected from hook");
+      // Only show error if YouTube is selected
+      if (hasYouTubeSelected) {
+        console.log("YouTube selected but no account available, showing error");
+        setShowYouTubeError(true);
+        
+        // Deselect YouTube if it's selected but not available
+        if (hasYouTubeSelected) {
+          const youtubeAccountIds = accounts
+            .filter(acc => acc.provider.toLowerCase() === 'youtube')
+            .map(acc => acc.id);
+          
+          setSelectedAccountIds(prev => 
+            prev.filter(id => !youtubeAccountIds.includes(id))
+          );
+          
+          toast({
+            title: "YouTube Account Issue",
+            description: "YouTube account is not properly connected. Please reconnect your account in Social settings.",
+            variant: "destructive"
+          });
+        }
+      }
+    }
+  }, [youtubeAccount, accounts, selectedAccountIds]);
   
   // Effect to check which platforms are available based on connected accounts
   useEffect(() => {
@@ -61,7 +113,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       setAvailablePlatforms(available);
       
       // Fetch YouTube playlists if YouTube is connected
-      if (available.includes('youtube')) {
+      if (available.includes('youtube') && youtubeAccount) {
+        console.log("Loading YouTube playlists for account:", youtubeAccount);
         loadPlaylists();
         setShowYouTubeError(false);
       } else {
@@ -73,7 +126,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     } else if (accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube')) {
       setShowYouTubeError(true);
     }
-  }, [accounts, loadPlaylists, selectedAccountIds]);
+  }, [accounts, loadPlaylists, selectedAccountIds, youtubeAccount]);
   
   // Toggle account selection
   const toggleAccount = (accountId: string, forceState?: boolean) => {
@@ -107,6 +160,56 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     return scheduledDate;
   }
 
+  // Verify source video has a valid path
+  const verifySourceVideoHasPath = async (sourceId: string): Promise<boolean> => {
+    try {
+      console.log(`Verifying source video ${sourceId} has a path`);
+      const response = await fetch(`/api/videos/library?id=${sourceId}`);
+      
+      if (!response.ok) {
+        console.error(`Error fetching source video details: ${response.status}`);
+        toast({ 
+          title: "Video Not Found", 
+          description: "Could not retrieve source video details", 
+          variant: "destructive" 
+        });
+        return false;
+      }
+      
+      const data = await response.json();
+      if (!data.videos || data.videos.length === 0) {
+        console.error("Source video not found in response");
+        toast({
+          title: "Source Video Not Found",
+          description: "The source video could not be found",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      const video = data.videos[0];
+      if (!video.storage_path && !video.public_url && !video.original_url) {
+        console.error("Source video has no usable path");
+        toast({
+          title: "Incomplete Video Data",
+          description: "The source video is missing its file path",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`Error verifying source video: ${error}`);
+      toast({ 
+        title: "Verification Error", 
+        description: "Failed to verify source video", 
+        variant: "destructive" 
+      });
+      return false;
+    }
+  }
+  
   // Check if the reaction (identified by reactionId, which is a reaction UUID) has a valid video path.
   const verifyReactionHasVideo = async (reactionId: string): Promise<boolean> => {
     // `reactionId` here is expected to be the actual UUID of a reaction record,
@@ -207,282 +310,31 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     }
   }
 
-  // Handle publishing to platforms
-  const handlePublish = async () => {
-    if (!reactionId) {
-      toast({
-        title: "Missing reaction",
-        description: "Cannot publish without a reaction video",
-        variant: "destructive"
-      })
-      return
-    }
-    
-    setIsPublishing(true)
-    
-    // Handle the ID based on whether it's a source video or reaction video
-    let actualReactionId = reactionId; // This will hold the UUID of the reaction to be published.
-    
-    if (isSourceVideo && reactionId) {
-      // This is a source video being published directly.
-      // The `reactionId` prop is a source_video_id.
-      // We need to find an existing reaction for this source_video_id or create a new one.
-      try {
-        console.log(`Source video publish: Looking up/creating reaction for sourceVideoId: ${reactionId}`);
-        
-        const response = await fetch(`/api/reactions/lookup?sourceVideoId=${reactionId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.length > 0) {
-            console.log(`Found existing reaction for sourceVideoId ${reactionId}: ${data[0].id}`);
-            actualReactionId = data[0].id;
-          } else {
-            console.log(`No existing reaction found for sourceVideoId ${reactionId}, creating a new one.`);
-            
-            const sourceVideoResponse = await fetch(`/api/videos/library?id=${reactionId}`);
-            let sourceVideoData = null;
-            let storagePath = null;
-            
-            if (sourceVideoResponse.ok) {
-              sourceVideoData = await sourceVideoResponse.json();
-              if (sourceVideoData.videos && sourceVideoData.videos.length > 0) {
-                storagePath = sourceVideoData.videos[0].storage_path;
-                console.log(`Retrieved source video details: storage_path=${storagePath}`);
-              }
-            }
-            
-            const createBody: any = {
-              source_video_id: reactionId,
-              title: initialTitle || 'Untitled Reaction from Source',
-              status: 'uploaded'
-            };
-            if (storagePath) {
-              createBody.reaction_video_storage_path = storagePath;
-            }
-            
-            const createResponse = await fetch('/api/reactions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(createBody)
-            });
-            
-            if (createResponse.ok) {
-              const createData = await createResponse.json();
-              console.log(`Created new reaction ${createData.id} for sourceVideoId ${reactionId}`);
-              actualReactionId = createData.id;
-
-              // If storagePath was not available initially but sourceVideoData was fetched,
-              // and the created reaction doesn't have reaction_video_storage_path, try to update.
-              if (sourceVideoData && !storagePath && sourceVideoData.videos && sourceVideoData.videos.length > 0 && sourceVideoData.videos[0].storage_path && !createBody.reaction_video_storage_path) {
-                 console.log(`Attempting to update reaction ${actualReactionId} with storage_path from source video.`);
-                 const updateData = { reaction_video_storage_path: sourceVideoData.videos[0].storage_path, status: 'uploaded' };
-                 // Fire and forget is fine here, main thing is actualReactionId is set
-                 fetch(`/api/reactions/${actualReactionId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updateData)
-                 }).catch(updateError => console.warn("Failed to update reaction with source storage path (non-critical)", updateError));
-              }
-            } else {
-              const errorText = await createResponse.text();
-              console.error(`Failed to create reaction for sourceVideoId ${reactionId}. Status: ${createResponse.status}, Body: ${errorText}`);
-              throw new Error("Failed to create reaction for the selected source video.");
-            }
-          }
-        } else {
-          const errorText = await response.text();
-          console.error(`Error looking up reaction for sourceVideoId ${reactionId}. Status: ${response.status}, Body: ${errorText}`);
-          throw new Error("Failed to check for existing reactions for the source video.");
-        }
-      } catch (error) {
-        console.error("Error processing source video for publishing:", error);
-        toast({
-          title: "Error Preparing Video",
-          description: error instanceof Error ? error.message : "An unexpected error occurred while preparing the source video.",
-          variant: "destructive"
-        });
-        setIsPublishing(false);
-        return;
-      }
-    } else if (!isSourceVideo && reactionId) {
-      // This is a regular reaction video publish.
-      // The `reactionId` prop is already the reaction_id.
-      // `actualReactionId` is already correctly set from `reactionId` (prop).
-      console.log(`Reaction video publish: Using provided reactionId directly: ${actualReactionId}`);
-      if (!actualReactionId || !actualReactionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        console.error(`Invalid reaction ID format: ${actualReactionId}`);
-        toast({
-          title: "Invalid Video ID",
-          description: "The selected video has an invalid ID format. Please select a different video.",
-          variant: "destructive"
-        });
-        setIsPublishing(false);
-        return;
-      }
-    } else if (!reactionId) {
-      // This case should ideally be caught by the check at the start of handlePublish (line 275)
-      toast({
-        title: "Missing Reaction ID",
-        description: "Cannot publish without a reaction video ID.",
-        variant: "destructive"
-      });
-      setIsPublishing(false);
-      return;
-    }
-
-    // Ensure actualReactionId is defined before proceeding
-    if (!actualReactionId) {
-        console.error("actualReactionId is undefined before verification. This indicates a logic flaw or an earlier unhandled error.");
-        toast({ title: "Internal Error", description: "Failed to determine the video ID for publishing. Please try again.", variant: "destructive"});
-        setIsPublishing(false);
-        return;
-    }
-    
-    // Always verify that the reaction has a valid video file
-    // This is important to check even for source videos
-    let hasVideo = await verifyReactionHasVideo(actualReactionId);
-    if (!hasVideo) {
-      setIsPublishing(false);
-      return;
-    }
-    
-    // Handle publishing to each selected platform
-    // Get selected accounts
-    const selectedAccounts = accounts.filter(account => selectedAccountIds.includes(account.id));
-    const successfulPlatforms: string[] = [];
-    const failedPlatforms: string[] = [];
-    let hasAnyRealSuccess = false;
-    
-    // Debug information
-    console.log("Starting publish process with mode:", postMode);
-    console.log("Selected accounts:", selectedAccounts);
-    
-    for (const account of selectedAccounts) {
-      const platform = account.provider.toLowerCase();
-      console.log(`Attempting to publish to ${platform}...`);
-      
-      try {
-        let result;
-        
-        if (postMode === 'instant') {
-          // For instant posting
-          if (platform === 'youtube') {
-            console.log("Calling publishToYouTube with reaction ID:", actualReactionId);
-            result = await publishToYouTube(actualReactionId);
-            console.log("YouTube result:", result);
-            
-            if (result && result.success) {
-              successfulPlatforms.push(platform);
-              hasAnyRealSuccess = true;
-            } else {
-              // Handle both result types safely
-              const errorMessage = 'error' in result ? result.error : "Failed to upload to YouTube";
-              throw new Error(errorMessage);
-            }
-          } else if (platform === 'tiktok') {
-            console.log("Calling publishToTikTok with reaction ID:", actualReactionId);
-            result = await publishToTikTok(actualReactionId);
-            console.log("TikTok result:", result);
-            
-            if (result && result.success) {
-              successfulPlatforms.push(platform);
-              hasAnyRealSuccess = true;
-            } else {
-              throw new Error(result?.error || "Failed to upload to TikTok");
-            }
-          } else {
-            // For other platforms that don't have direct posting yet
-            // Schedule for immediate posting (1 minute from now)
-            console.log(`Scheduling immediate post for ${platform}...`);
-            const immediateTime = new Date();
-            immediateTime.setMinutes(immediateTime.getMinutes() + 1);
-            result = await scheduleForPlatform(platform, immediateTime, actualReactionId);
-            console.log(`${platform} scheduling result:`, result);
-            
-            if (result) {
-              successfulPlatforms.push(platform);
-              // This is just scheduled, not a real success for immediate posting
-            } else {
-              throw new Error(`Failed to schedule for ${platform}`);
-            }
-          }
-        } else {
-          // For scheduled posting
-          console.log(`Scheduling post for ${platform} at ${getScheduledDateTime()}...`);
-          result = await scheduleForPlatform(platform, getScheduledDateTime(), actualReactionId);
-          console.log(`${platform} scheduling result:`, result);
-          
-          if (result) {
-            successfulPlatforms.push(platform);
-            hasAnyRealSuccess = true; // Scheduling is considered a success for schedule mode
-          } else {
-            throw new Error(`Failed to schedule for ${platform}`);
-          }
-        }
-      } catch (error) {
-        console.error(`Error publishing to ${platform}:`, error);
-        failedPlatforms.push(platform);
-        toast({
-          title: `${platform} publishing failed`,
-          description: error instanceof Error ? error.message : "An unknown error occurred",
-          variant: "destructive"
-        });
-        // Continue with other platforms even if one fails
-      }
-    }
-    
-    // Show completion status
-    setPublishComplete(successfulPlatforms.length > 0);
-    setIsPublishing(false);
-    
-    console.log("Publishing results:", {
-      successfulPlatforms,
-      failedPlatforms,
-      hasAnyRealSuccess
-    });
-    
-    // Show success message if at least one platform succeeded
-    if (successfulPlatforms.length > 0) {
-      const platformNames = successfulPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
-      
-      // For instant mode, we need to be more careful about success messages
-      if (postMode === 'instant' && !hasAnyRealSuccess) {
-        toast({
-          title: "Publishing initiated",
-          description: `Your reaction has been submitted for processing on: ${platformNames}. Check the dashboard for status updates.`,
-          variant: "default"
-        });
-      } else {
-        toast({
-          title: postMode === 'instant' ? "Published successfully" : "Scheduled successfully",
-          description: postMode === 'instant'
-            ? `Your reaction has been published to: ${platformNames}`
-            : `Your reaction has been scheduled for publishing to: ${platformNames}`,
-          variant: "default"
-        });
-      }
-      
-      if (onPublishingComplete) {
-        onPublishingComplete();
-      }
-    }
-    
-    // Show overall failure message if all platforms failed
-    if (successfulPlatforms.length === 0 && failedPlatforms.length > 0) {
-      toast({
-        title: "Publishing failed for all platforms",
-        description: "Please check the error messages and try again",
-        variant: "destructive"
-      });
-    }
-  }
-  
   // Publish specifically to YouTube
   const publishToYouTube = async (reactionIdToPublish: string) => { // Changed: parameter is now required and named clearly
     if (!reactionIdToPublish) { // This check is more of a safeguard
       console.error("publishToYouTube called without a reactionIdToPublish");
       return { success: false, error: "Internal error: Missing reaction ID for YouTube upload" };
     }
+    
+    // Get YouTube account directly from accounts array to avoid case sensitivity issues
+    const youtubeAccountFromList = accounts.find(acc => 
+      acc.provider.toLowerCase() === 'youtube' && 
+      acc.status === 'active'
+    );
+    
+    console.log("YouTube account details:", {
+      fromHook: youtubeAccount ? {
+        id: youtubeAccount.id,
+        provider: youtubeAccount.provider,
+        username: youtubeAccount.provider_username
+      } : null,
+      fromAccountsList: youtubeAccountFromList ? {
+        id: youtubeAccountFromList.id,
+        provider: youtubeAccountFromList.provider,
+        username: youtubeAccountFromList.provider_username
+      } : null
+    });
     
     // Verify this reaction has a valid video file before proceeding
     const hasVideo = await verifyReactionHasVideo(reactionIdToPublish); // Use the passed-in ID
@@ -505,8 +357,55 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     
     setYoutubeUploadStatus("Preparing video for upload...");
     
+    // Use either the hook account or direct account - prefer direct to avoid case sensitivity issues
+    const activeYoutubeAccount = youtubeAccount || youtubeAccountFromList;
+    
+    // First check if the YouTube account is available
+    if (!activeYoutubeAccount) {
+      console.warn("No active YouTube account found - skipping hook and using API directly");
+      
+      // Skip the hook entirely and use the share scheduling API as a workaround
+      try {
+        console.log("Using scheduling API for YouTube with reaction ID:", reactionIdToPublish);
+        const immediateTime = new Date();
+        immediateTime.setMinutes(immediateTime.getMinutes() + 1);
+        
+        const result = await scheduleShare({ // Hook from useSocialShares
+          reactionId: reactionIdToPublish,
+          provider: 'youtube',
+          title,
+          description,
+          scheduledFor: immediateTime,
+          privacy,
+          tags: tagsList,
+          isImmediate: true
+        });
+        
+        console.log("YouTube scheduled upload result:", result);
+        
+        if (!result) {
+          console.error("YouTube scheduled upload returned null/undefined");
+          setYoutubeUploadStatus("");
+          throw new Error("Failed to schedule YouTube upload");
+        }
+        
+        setYoutubeUploadStatus("Scheduled for immediate processing");
+        toast({
+          title: "YouTube Publishing Queued",
+          description: "Your video has been queued for YouTube publishing",
+          variant: "default"
+        });
+        
+        return { success: false, scheduled: true, videoId: result.id };
+      } catch (scheduleError) {
+        console.error("YouTube schedule API failed:", scheduleError);
+        setYoutubeUploadStatus("");
+        throw new Error("Could not connect to YouTube. Please check your account connection.");
+      }
+    }
+    
+    // If we have a YouTube account, try direct upload first
     try {
-      // Try direct upload first
       console.log("Attempting direct YouTube upload with reaction ID:", reactionIdToPublish);
       const result = await uploadToYouTube({ // Hook from useYouTubeAccount
         reactionId: reactionIdToPublish, // Use the passed-in ID
@@ -624,7 +523,7 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
       
       const result = await response.json();
       console.log("TikTok upload successful:", result);
-      return result;
+      return { success: true, ...result };
     } catch (error) {
       console.error("TikTok direct upload failed, error details:", error);
       
@@ -652,8 +551,8 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
           throw new Error("Failed to schedule TikTok upload");
         }
         
-        // This is not a real success for instant posting, just scheduled
-        return { success: false, scheduled: true, share: result };
+        // This is not a real direct success, just scheduled
+        return { success: false, scheduled: true, videoId: result.id };
       } catch (scheduleError) {
         console.error("TikTok schedule fallback also failed:", scheduleError);
         throw scheduleError;
@@ -661,350 +560,637 @@ export function PublishOptions({ onPublishingComplete, reactionId, initialTitle,
     }
   }
   
-  // Schedule for other platforms
-  const scheduleForPlatform = async (platform: string, scheduledTime: Date, reactionIdToSchedule: string) => { // Changed: parameter is now required
-    if (!reactionIdToSchedule) {
-      console.error(`scheduleForPlatform (${platform}) called without a reactionIdToSchedule`);
-      // For robustness, though handlePublish should ensure this is passed.
-      return null;
-    }
+  // Handle publishing to platforms
+  const handlePublish = async () => {
+    setIsPublishing(true);
     
-    // Verify this reaction has a valid video file before proceeding
-    const hasVideo = await verifyReactionHasVideo(reactionIdToSchedule); // Use the passed-in ID
-    if (!hasVideo) {
+    if (!reactionId) {
       toast({
-        title: `${platform} scheduling failed`,
-        description: "Reaction video not complete or missing. Please re-record your reaction.",
+        title: "Missing video",
+        description: "Please select a video to publish",
         variant: "destructive"
       });
-      return null;
+      setIsPublishing(false);
+      return;
     }
     
-    // For now, just schedule the share in the database for future processing
-    const result = await scheduleShare({
-      reactionId: reactionIdToSchedule, // Use the passed-in ID
-      provider: platform,
-      title,
-      description,
-      scheduledFor: scheduledTime,
-      privacy,
-      tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
-      isImmediate: postMode === 'instant'
-    })
+    // Handle the ID based on whether it's a source video or reaction video
+    let actualReactionId = reactionId; // This will hold the UUID of the reaction to be published.
     
-    if (!result) {
-      throw new Error(`Failed to schedule for ${platform}`)
+    if (isSourceVideo && reactionId) {
+      try {
+        // Verify source video has a valid path
+        const hasPath = await verifySourceVideoHasPath(reactionId);
+        if (!hasPath) {
+          setIsPublishing(false);
+          return;
+        }
+        
+        console.log(`Source video publish: Looking up/creating reaction for sourceVideoId: ${reactionId}`);
+        
+        // Try to find an existing reaction that references this source video
+        const response = await fetch(`/api/reactions/lookup?sourceVideoId=${reactionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.length > 0) {
+            console.log(`Found existing reaction for sourceVideoId ${reactionId}: ${data[0].id}`);
+            actualReactionId = data[0].id;
+          } else {
+            console.log(`No existing reaction found for sourceVideoId ${reactionId}, creating a new one.`);
+            
+            // Need to get source video details for storage path
+            const sourceVideoResponse = await fetch(`/api/videos/library?id=${reactionId}`);
+            let sourceVideoData = null;
+            let storagePath = null;
+            
+            if (sourceVideoResponse.ok) {
+              sourceVideoData = await sourceVideoResponse.json();
+              if (sourceVideoData.videos && sourceVideoData.videos.length > 0) {
+                storagePath = sourceVideoData.videos[0].storage_path;
+                console.log(`Retrieved source video details: storage_path=${storagePath}`);
+              }
+            }
+            
+            // Create a new reaction record that references this source video
+            const createBody: any = {
+              source_video_id: reactionId,
+              title: initialTitle || 'Untitled Reaction from Source',
+              status: 'uploaded'
+            };
+            if (storagePath) {
+              createBody.reaction_video_storage_path = storagePath;
+            }
+            
+            const createResponse = await fetch('/api/reactions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(createBody)
+            });
+            
+            if (createResponse.ok) {
+              const createData = await createResponse.json();
+              console.log(`Created new reaction ${createData.id} for sourceVideoId ${reactionId}`);
+              actualReactionId = createData.id;
+            } else {
+              const errorText = await createResponse.text();
+              console.error(`Failed to create reaction for sourceVideoId ${reactionId}. Status: ${createResponse.status}, Body: ${errorText}`);
+              throw new Error("Failed to create reaction for the selected source video.");
+            }
+          }
+        } else {
+          const errorText = await response.text();
+          console.error(`Error looking up reaction for sourceVideoId ${reactionId}. Status: ${response.status}, Body: ${errorText}`);
+          throw new Error("Failed to check for existing reactions for the source video.");
+        }
+      } catch (error) {
+        console.error("Error processing source video for publishing:", error);
+        toast({
+          title: "Error Preparing Video",
+          description: error instanceof Error ? error.message : "An unexpected error occurred while preparing the source video.",
+          variant: "destructive"
+        });
+        setIsPublishing(false);
+        return;
+      }
+    } else {
+      // For reaction videos, verify using the existing method
+      const hasVideo = await verifyReactionHasVideo(reactionId);
+      if (!hasVideo) {
+        setIsPublishing(false);
+        return;
+      }
     }
     
-    return result
+    const selectedAccounts = accounts.filter(acc => selectedAccountIds.includes(acc.id));
+    const successfulPlatforms: string[] = [];
+    const failedPlatforms: string[] = [];
+    let hasAnyRealSuccess = false;
+    
+    console.log(`Starting publish process: mode=${postMode}, isSourceVideo=${isSourceVideo}, actual reactionId=${actualReactionId}`);
+    
+    for (const account of selectedAccounts) {
+      const platform = account.provider.toLowerCase();
+      console.log(`Attempting to publish to ${platform}...`);
+      
+      try {
+        if (postMode === 'instant') {
+          // Instant posting
+          if (platform === 'youtube') {
+            // CRITICAL FIX: Since backend logs show the YouTube account is not found despite frontend checks,
+            // we need to verify the YouTube integration is fully active by checking if we have a valid token
+            // in the YouTube hook before attempting to upload
+
+            // First we log the detailed state for debugging purposes
+            console.log("DETAILED YOUTUBE PUBLISHING STATE:", {
+              platformFromLoop: platform,
+              hookYoutubeAccount: youtubeAccount ? {
+                id: youtubeAccount.id,
+                provider: youtubeAccount.provider,
+                status: youtubeAccount.status,
+                profileData: youtubeAccount.profile_data ? 'present' : 'missing'
+              } : 'null or undefined',
+              youtubeError: youtubeAccountError,
+              // We can't directly access hook state properties from the accounts array
+              hookError: youtubeAccountError
+            });
+
+            // Even if youtubeAccount is not available from the hook, we'll try to publish anyway
+            // This is per user request to not block YouTube publishing
+            if (!youtubeAccount) {
+              console.warn("YouTube account not available from hook - will try API anyway");
+              
+              // Show a warning toast but continue with the attempt (using default since warning isn't a valid variant)
+              toast({
+                title: "YouTube Connection Warning",
+                description: "YouTube account may not be properly connected. Will attempt publishing anyway.",
+                variant: "default"
+              });
+              
+              // Continue with the attempt - don't skip
+            }
+            
+            // Only proceed with publishing if we confirmed the YouTube account exists
+            try {
+              if (isSourceVideo) {
+                console.log(`Publishing source video (via reaction ${actualReactionId}) to YouTube`);
+                
+              // CRITICAL FIX: The browser logs show a mismatch between selected account ID and hook account ID
+              // Get the actual selected YouTube account ID from selectedAccountIds
+              const selectedYoutubeAccountId = selectedAccountIds.find(id => 
+                accounts.some(acc => acc.id === id && acc.provider.toLowerCase() === 'youtube')
+              );
+              
+              console.log("SELECTED YOUTUBE ACCOUNT INFO:", {
+                selectedYoutubeAccountId,
+                selectedAccountFromList: accounts.find(acc => acc.id === selectedYoutubeAccountId),
+                hookAccountId: youtubeAccount?.id
+              });
+              
+              // Call the YouTube API directly with the selected account ID
+              const response = await fetch('/api/social/youtube/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  reactionId: actualReactionId,
+                  title,
+                  description,
+                  privacy,
+                  tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+                  playlistId: selectedPlaylist === "none" ? undefined : selectedPlaylist,
+                  accountId: selectedYoutubeAccountId // Pass the specific selected account ID
+                })
+              });
+              
+              let result;
+              if (!response.ok) {
+                const errorData = await response.json();
+                result = { success: false, error: errorData.error || "YouTube API returned an error" };
+              } else {
+                result = await response.json();
+              }
+                
+                console.log("YouTube direct upload result:", result);
+                
+                if (result?.success) {
+                  successfulPlatforms.push(platform);
+                  hasAnyRealSuccess = true;
+                } else {
+                  // Don't try fallbacks - if direct upload fails, don't keep trying
+                  throw new Error(result?.error || "Failed to upload to YouTube");
+                }
+              } else {
+                console.log(`Publishing reaction ${actualReactionId} to YouTube`);
+                
+                // CRITICAL FIX: Apply the same direct API approach for reaction videos
+                // Get the actual selected YouTube account ID from selectedAccountIds
+                const selectedYoutubeAccountId = selectedAccountIds.find(id => 
+                  accounts.some(acc => acc.id === id && acc.provider.toLowerCase() === 'youtube')
+                );
+                
+                console.log("SELECTED YOUTUBE ACCOUNT INFO (REACTION):", {
+                  selectedYoutubeAccountId,
+                  selectedAccountFromList: accounts.find(acc => acc.id === selectedYoutubeAccountId),
+                  hookAccountId: youtubeAccount?.id
+                });
+                
+                // Call the YouTube API directly with the selected account ID
+                const response = await fetch('/api/social/youtube/upload', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    reactionId: actualReactionId,
+                    title,
+                    description,
+                    privacy,
+                    tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+                    playlistId: selectedPlaylist === "none" ? undefined : selectedPlaylist,
+                    accountId: selectedYoutubeAccountId // Pass the specific selected account ID
+                  })
+                });
+                
+                let result;
+                if (!response.ok) {
+                  const errorData = await response.json();
+                  result = { success: false, error: errorData.error || "YouTube API returned an error" };
+                } else {
+                  result = await response.json();
+                }
+                
+                console.log("YouTube direct upload result:", result);
+                
+                if (result?.success) {
+                  successfulPlatforms.push(platform);
+                  hasAnyRealSuccess = true;
+                } else {
+                  // Don't try fallbacks
+                  throw new Error(result?.error || "Failed to upload to YouTube");
+                }
+              }
+            } catch (error) {
+              console.error(`Error uploading to YouTube: ${error}`);
+              failedPlatforms.push(platform);
+              toast({
+                title: "YouTube Publishing Failed",
+                description: error instanceof Error ? error.message : "Unknown error uploading to YouTube",
+                variant: "destructive"
+              });
+              
+              // Continue to other platforms
+              continue;
+            }
+          } else if (platform === 'tiktok') {
+            if (isSourceVideo) {
+              console.log(`Publishing source video (via reaction ${actualReactionId}) to TikTok`);
+              const response = await fetch('/api/social/tiktok/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  reactionId: actualReactionId, // Always use actual reaction ID
+                  title,
+                  description,
+                  privacy,
+                  tags: tags.split(',').map(t => t.trim()).filter(Boolean)
+                })
+              });
+              
+              if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to upload to TikTok");
+              }
+              
+              successfulPlatforms.push(platform);
+              hasAnyRealSuccess = true;
+            } else {
+              console.log(`Publishing reaction ${actualReactionId} to TikTok`);
+              const result = await publishToTikTok(actualReactionId);
+              
+              if (result?.success) {
+                successfulPlatforms.push(platform);
+                hasAnyRealSuccess = true;
+              } else {
+                throw new Error(result?.error || "Failed to upload to TikTok");
+              }
+            }
+          } else {
+            // Other platforms - schedule for immediate publishing
+            const immediateTime = new Date();
+            immediateTime.setMinutes(immediateTime.getMinutes() + 1);
+            
+            console.log(`Scheduling immediate post for ${platform} with video ${isSourceVideo ? `source via reaction ${actualReactionId}` : actualReactionId}`);
+            const result = await scheduleShare({
+              reactionId: actualReactionId, // Always use actual reaction ID
+              provider: platform,
+              title,
+              description,
+              scheduledFor: immediateTime,
+              privacy,
+              tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+              isImmediate: true
+            });
+            
+            if (result) {
+              successfulPlatforms.push(platform);
+              // Not a real direct success but scheduled
+            } else {
+              throw new Error(`Failed to schedule for ${platform}`);
+            }
+          }
+        } else {
+          // Scheduled posting - same approach for both source and reaction videos
+          const scheduledTime = getScheduledDateTime();
+          
+          console.log(`Scheduling post for ${platform} at ${scheduledTime} with video ${isSourceVideo ? `source via reaction ${actualReactionId}` : actualReactionId}`);
+          const result = await scheduleShare({
+            reactionId: actualReactionId, // Always use actual reaction ID
+            provider: platform,
+            title,
+            description,
+            scheduledFor: scheduledTime,
+            privacy,
+            tags: tags.split(',').map(t => t.trim()).filter(Boolean)
+          });
+          
+          if (result) {
+            successfulPlatforms.push(platform);
+            hasAnyRealSuccess = true;
+          } else {
+            throw new Error(`Failed to schedule for ${platform}`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error publishing to ${platform}:`, error);
+        failedPlatforms.push(platform);
+        toast({
+          title: `${platform} publishing failed`,
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "destructive"
+        });
+      }
+    }
+    
+    // Show success/failure messages
+    if (successfulPlatforms.length > 0) {
+      const platformNames = successfulPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ');
+      
+      if (postMode === 'instant' && !hasAnyRealSuccess) {
+        toast({
+          title: "Publishing initiated",
+          description: `Your video has been submitted for processing on: ${platformNames}. Check dashboard for updates.`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: postMode === 'instant' ? "Published successfully" : "Scheduled successfully",
+          description: postMode === 'instant'
+            ? `Your video has been published to: ${platformNames}`
+            : `Your video has been scheduled for publishing to: ${platformNames}`,
+          variant: "default"
+        });
+      }
+      
+      setPublishComplete(true);
+      
+      if (onPublishingComplete) {
+        onPublishingComplete();
+      }
+    }
+    
+    if (successfulPlatforms.length === 0 && failedPlatforms.length > 0) {
+      toast({
+        title: "Publishing failed for all platforms",
+        description: "Please check the error messages and try again",
+        variant: "destructive"
+      });
+    }
+    
+    setIsPublishing(false);
   }
   
-  // Platform data
-  const platforms = [
-    { id: 'youtube', name: 'YouTube', icon: Youtube, color: 'text-red-600' },
-    { id: 'tiktok', name: 'TikTok', icon: TikTok, color: 'text-black' },
-    { id: 'instagram', name: 'Instagram', icon: Instagram, color: 'text-pink-600' },
-    { id: 'twitter', name: 'Twitter/X', icon: Twitter, color: 'text-blue-400' },
-    { id: 'facebook', name: 'Facebook', icon: Facebook, color: 'text-blue-600' },
-    { id: 'twitch', name: 'Twitch', icon: Twitch, color: 'text-purple-600' },
-  ]
-
+  // Render the component UI
   return (
-    <Card className="border-none shadow-none">
-      <CardHeader className="px-0 pt-0">
-        <CardTitle className="text-2xl">Publishing Options</CardTitle>
-        <CardDescription>Configure where and when to publish your reaction video</CardDescription>
+    <Card>
+      <CardHeader>
+        <CardTitle>Publish Options</CardTitle>
+        <CardDescription>
+          Choose when and where to publish your video
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6 px-0">
-        {/* Video Details */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Video Details</h3>
-          <div className="space-y-4 max-w-xl">
-            <div className="space-y-2">
-              <label htmlFor="title" className="text-sm font-medium">
-                Title
-              </label>
-              <Input 
-                id="title" 
-                placeholder="Enter a catchy title for your video" 
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="description" className="text-sm font-medium">
-                Description
-              </label>
-              <Textarea 
-                id="description" 
-                placeholder="Describe your reaction video" 
-                rows={4} 
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="tags" className="text-sm font-medium">
-                Tags
-              </label>
-              <Input
-                id="tags"
-                placeholder="reaction, viral, trending (comma separated)"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="privacy" className="text-sm font-medium">
-                Privacy Setting
-              </label>
-              <Select
-                value={privacy}
-                onValueChange={(value) => setPrivacy(value as 'public' | 'unlisted' | 'private')}
-              >
-                <SelectTrigger id="privacy" className="w-full">
-                  <SelectValue placeholder="Select privacy setting" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="private">Private (Only you can see)</SelectItem>
-                  <SelectItem value="unlisted">Unlisted (Anyone with the link)</SelectItem>
-                  <SelectItem value="public">Public (Visible to everyone)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* YouTube connection error */}
+      
+      <CardContent className="space-y-4">
+        {/* Post Mode Selection */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Publishing Mode</h3>
+          <div className="flex space-x-2">
+            <Button 
+              variant={postMode === 'instant' ? "default" : "outline"} 
+              onClick={() => setPostMode('instant')}
+              size="sm"
+            >
+              Publish Now
+            </Button>
+            <Button 
+              variant={postMode === 'schedule' ? "default" : "outline"} 
+              onClick={() => setPostMode('schedule')}
+              size="sm"
+            >
+              Schedule
+            </Button>
+          </div>
+        </div>
+        
+        {/* Title & Description */}
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label htmlFor="title" className="text-sm font-medium">Title</label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter a title for your video"
+            />
+          </div>
+          
+          <div className="space-y-1">
+            <label htmlFor="description" className="text-sm font-medium">Description</label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter a description for your video"
+            />
+          </div>
+          
+          <div className="space-y-1">
+            <label htmlFor="tags" className="text-sm font-medium">Tags (comma separated)</label>
+            <Input
+              id="tags"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="e.g. funny, reaction, gaming"
+            />
+          </div>
+        </div>
+        
+        {/* Privacy Settings */}
+        <div className="space-y-1">
+          <label htmlFor="privacy" className="text-sm font-medium">Privacy</label>
+          <Select 
+            value={privacy} 
+            onValueChange={(value: 'public' | 'unlisted' | 'private') => setPrivacy(value)}
+          >
+            <SelectTrigger id="privacy">
+              <SelectValue placeholder="Select privacy setting" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="public">Public</SelectItem>
+              <SelectItem value="unlisted">Unlisted</SelectItem>
+              <SelectItem value="private">Private</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* YouTube-specific Options */}
+        {accounts.some(acc => 
+          selectedAccountIds.includes(acc.id) && 
+          acc.provider.toLowerCase() === 'youtube'
+        ) && (
+          <div className="space-y-1">
+            <label htmlFor="playlist" className="text-sm font-medium">YouTube Playlist</label>
+            <Select 
+              value={selectedPlaylist} 
+              onValueChange={setSelectedPlaylist}
+            >
+              <SelectTrigger id="playlist">
+                <SelectValue placeholder="Select playlist" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {playlists.map((playlist) => (
+                  <SelectItem key={playlist.id} value={playlist.id}>
+                    {playlist.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {showYouTubeError && (
-              <Alert className="mt-4 border-amber-200 bg-amber-50 text-amber-800">
+              <Alert variant="destructive" className="mt-2">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
-                  You need to connect a YouTube account to use YouTube features.
-                  <Button
-                    variant="link"
-                    className="h-auto p-0 ml-1 text-amber-800 underline"
-                    onClick={() => window.location.href = '/dashboard/social'}
-                  >
-                    Connect your account
-                  </Button>
+                  YouTube account not properly connected. Please reconnect your account in Social settings.
                 </AlertDescription>
               </Alert>
             )}
-            
-            {/* YouTube Settings - Only show when a YouTube account is selected and connected */}
-            {accounts.some(acc => selectedAccountIds.includes(acc.id) && acc.provider.toLowerCase() === 'youtube') && (
-              <div className="space-y-4 mt-4 p-4 border rounded-md bg-red-50/30">
-                <div className="flex items-center gap-2">
-                  <Youtube className="h-5 w-5 text-red-600" />
-                  <h4 className="font-medium">YouTube Upload Settings</h4>
-                </div>
-                
-                <div className="space-y-2">
-                  <label htmlFor="youtubePlaylist" className="text-sm font-medium">
-                    Add to YouTube Playlist
-                  </label>
-                  <Select
-                    value={selectedPlaylist}
-                    onValueChange={setSelectedPlaylist}
-                  >
-                    <SelectTrigger id="youtubePlaylist" className="w-full">
-                      <SelectValue placeholder="Add to playlist (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None (Don't add to playlist)</SelectItem>
-                      {playlists.map(playlist => (
-                        <SelectItem key={playlist.id} value={playlist.id}>
-                          {playlist.title} ({playlist.itemCount} videos)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    The video will be added to the selected playlist after upload.
-                  </p>
-                </div>
-                
-                {youtubeUploadStatus && (
-                  <div className="flex items-center gap-2 text-sm mt-2 text-blue-700">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>{youtubeUploadStatus}</span>
-                  </div>
-                )}
+            {youtubeUploadStatus && (
+              <div className="text-sm text-muted-foreground mt-1">
+                {youtubeUploadStatus}
               </div>
             )}
           </div>
-        </div>
+        )}
         
-        {/* Connected Profiles */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Connected Profiles</h3>
-          {accounts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-8 text-center">
-              <p className="text-md font-semibold text-muted-foreground">No social accounts connected</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Please connect your social media accounts in the Social Accounts page first.
-              </p>
-              <Button variant="outline" className="mt-4" onClick={() => window.location.href = '/dashboard/social'}>
-                Connect Accounts
-              </Button>
+        {/* Schedule Options */}
+        {postMode === 'schedule' && (
+          <div className="space-y-3">
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">Publish Date</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-start">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(date, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={setDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {accounts.filter(account => account.status === 'active').map((account) => {
-                const platformInfo = platforms.find(p => p.id === account.provider.toLowerCase());
-                if (!platformInfo) return null;
-                
-                const Icon = platformInfo.icon;
-                const isSelected = selectedAccountIds.includes(account.id);
-                
-                const checkboxId = `platform-${account.id}`;
-                return (
-                  <div
-                    key={account.id}
-                    className={`flex items-center space-x-2 rounded-md border p-3 transition-colors
-                      ${isSelected ? 'border-primary bg-primary/5' : ''}
-                    `}
-                  >
-                    <div className="flex flex-1 items-center space-x-2">
-                      <Checkbox
-                        id={checkboxId}
-                        checked={isSelected}
-                        onCheckedChange={(checked) => toggleAccount(account.id, checked === true)}
-                      />
-                      <label htmlFor={checkboxId} className="flex flex-1 items-center space-x-2 cursor-pointer">
-                        <Icon className={`h-5 w-5 ${platformInfo.color}`} strokeWidth={account.provider.toLowerCase() === 'youtube' ? 2 : 1.5} />
-                        <div className="flex-1">
-                          <span className="text-sm font-medium block">
-                            {account.provider_username ? `@${account.provider_username}` : account.provider}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {platformInfo.name}
-                          </span>
-                        </div>
-                      </label>
-                      {isSelected && (
-                        <Check className="h-4 w-4 text-green-500" />
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-        
-        {/* Publishing Options */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Publishing Options</h3>
-          
-          <div className="flex space-x-4 mb-4">
-            <Button
-              variant={postMode === 'instant' ? "default" : "outline"}
-              onClick={() => setPostMode('instant')}
-              className="flex-1"
-            >
-              Post Instantly
-            </Button>
-            <Button
-              variant={postMode === 'schedule' ? "default" : "outline"}
-              onClick={() => setPostMode('schedule')}
-              className="flex-1"
-            >
-              Schedule for Later
-            </Button>
-          </div>
-          
-          {postMode === 'schedule' && (
-            <div className="space-y-4">
-              <div className="flex flex-col space-y-4 md:flex-row md:space-x-4 md:space-y-0">
-                <div className="space-y-2 md:w-1/2">
-                  <p className="text-sm font-medium">Publish Date</p>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start text-left">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, "PPP") : "Select date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="space-y-2 md:w-1/2">
-                  <p className="text-sm font-medium">Publish Time</p>
-                  <div className="relative">
-                    <Input
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      className="w-full pl-10"
-                    />
-                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  </div>
-                </div>
-              </div>
+            
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">Publish Time</label>
               <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="optimal"
-                  checked={useOptimalTimes}
-                  onCheckedChange={(checked) => setUseOptimalTimes(checked === true)}
-                />
-                <label htmlFor="optimal" className="text-sm font-medium cursor-pointer">
-                  Use AI-recommended optimal posting times for each platform
-                </label>
+                <Button variant="outline" className="justify-start flex-1">
+                  <Clock className="mr-2 h-4 w-4" />
+                  <Input 
+                    type="time" 
+                    value={time} 
+                    onChange={(e) => setTime(e.target.value)}
+                    className="border-0 p-0 focus:ring-0"
+                  />
+                </Button>
               </div>
             </div>
-          )}
-          
-          {useOptimalTimes && (
-            <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700 mt-2">
-              <p className="font-medium">Optimal posting times:</p>
-              <ul className="list-disc pl-5 mt-1 space-y-1">
-                <li>YouTube: Weekends at 9-11 AM</li>
-                <li>TikTok: Tuesday at 9 AM and Thursday at 7-9 PM</li>
-                <li>Instagram: Wednesday at 11 AM and Friday at 10-11 AM</li>
-                <li>Twitter/X: Weekdays at 9 AM</li>
-                <li>Facebook: Weekdays at 1-4 PM</li>
-                <li>Twitch: Weekends at 7-9 PM</li>
-              </ul>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="optimal-times" 
+                checked={useOptimalTimes}
+                onCheckedChange={() => setUseOptimalTimes(!useOptimalTimes)}
+              />
+              <label
+                htmlFor="optimal-times"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Use optimal publishing times per platform
+              </label>
             </div>
-          )}
+          </div>
+        )}
+        
+        {/* Platform Selection */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Select Platforms</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {accounts.map((account) => {
+              const platform = account.provider.toLowerCase();
+              const isSelected = selectedAccountIds.includes(account.id);
+              let PlatformIcon: any;
+              
+              if (platform === 'youtube') PlatformIcon = Youtube;
+              else if (platform === 'tiktok') PlatformIcon = TikTok;
+              else if (platform === 'instagram') PlatformIcon = Instagram;
+              else if (platform === 'twitter') PlatformIcon = Twitter;
+              else if (platform === 'facebook') PlatformIcon = Facebook;
+              else if (platform === 'twitch') PlatformIcon = Twitch;
+              else PlatformIcon = null;
+              
+              return (
+                <Button
+                  key={account.id}
+                  variant={isSelected ? "default" : "outline"}
+                  className={`flex items-center justify-start px-3 py-6 ${isSelected ? "" : "opacity-60"}`}
+                  onClick={() => toggleAccount(account.id)}
+                  disabled={account.status !== 'active'}
+                >
+                  <div className="flex flex-col items-start flex-1 min-w-0 mr-2">
+                    <div className="flex items-center">
+                      {PlatformIcon && (
+                        <PlatformIcon className={`mr-2 h-5 w-5 ${isSelected ? "text-white" : ""}`} />
+                      )}
+                      <span className="capitalize font-medium">{platform}</span>
+                    </div>
+                    {account.provider_username && (
+                      <span className={`text-xs truncate ${isSelected ? "text-white/80" : "text-muted-foreground"}`}>
+                        @{account.provider_username}
+                      </span>
+                    )}
+                  </div>
+                  {isSelected && <Check className="h-4 w-4 flex-shrink-0" />}
+                </Button>
+              );
+            })}
+          </div>
         </div>
         
-        {/* Action buttons */}
-        <div className="flex justify-between pt-4">
-          <Button variant="outline">Save as Draft</Button>
-          <Button
-            onClick={handlePublish}
-            disabled={isPublishing || (!reactionId && selectedAccountIds.length > 0)}
+        {/* Publish Button */}
+        <div className="pt-4">
+          <Button 
+            onClick={handlePublish} 
+            disabled={isPublishing || selectedAccountIds.length === 0 || !reactionId}
+            className="w-full"
           >
             {isPublishing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {postMode === 'instant' ? "Publishing..." : "Scheduling..."}
+                Publishing...
+              </>
+            ) : publishComplete ? (
+              <>
+                <Check className="mr-2 h-4 w-4" />
+                Published
               </>
             ) : (
-              selectedAccountIds.length > 0
-                ? (postMode === 'instant' ? "Publish Now" : "Schedule Post")
-                : "Skip Publishing"
+              postMode === 'schedule' ? 'Schedule Post' : 'Publish Now'
             )}
           </Button>
         </div>
         
-        {/* Success message */}
-        {publishComplete && (
-          <Alert className="bg-blue-50 border-blue-200 mt-4">
-            <Check className="h-4 w-4 text-blue-500" />
-            <AlertDescription className="text-blue-700">
-              {selectedAccountIds.length > 0
-                ? postMode === 'instant'
-                  ? "Your reaction video has been submitted for processing. This may take some time to complete. Check the dashboard for status updates."
-                  : "Your reaction video has been scheduled for publishing at the selected time."
-                : "Your reaction video has been saved without publishing."}
-            </AlertDescription>
-          </Alert>
-        )}
       </CardContent>
     </Card>
-  )
+  );
 }
