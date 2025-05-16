@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SocialAccount, YouTubeChannel } from '@/lib/types';
 import useSocialAccounts from './use-social-accounts';
 
 interface UseYouTubeAccountResult {
+  youtubeAccounts: SocialAccount[];
   youtubeAccount: SocialAccount | undefined;
   channelData: YouTubeChannel | undefined;
   isLoading: boolean;
   error: string | null;
   refreshChannel: () => Promise<void>;
+  selectAccount: (accountId: string) => void;
+  selectedAccountId: string | null;
   uploadVideo: (params: {
     reactionId: string;
     title: string;
@@ -27,12 +30,34 @@ interface UseYouTubeAccountResult {
 }
 
 export default function useYouTubeAccount(): UseYouTubeAccountResult {
-  const { accounts, isLoading: accountsLoading, error: accountsError, getAccountByProvider } = useSocialAccounts();
+  const { accounts, isLoading: accountsLoading, error: accountsError } = useSocialAccounts();
   const [isLoading, setIsLoading] = useState<boolean>(accountsLoading);
   const [error, setError] = useState<string | null>(accountsError);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
-  const youtubeAccount = getAccountByProvider('youtube');
+  // Filter to get only YouTube accounts
+  const youtubeAccounts = accounts.filter(account => 
+    account.provider.toLowerCase() === 'youtube' && account.status === 'active'
+  );
+  
+  // Set the first YouTube account as selected by default if none is selected
+  useEffect(() => {
+    if (youtubeAccounts.length > 0 && !selectedAccountId) {
+      setSelectedAccountId(youtubeAccounts[0].id);
+    }
+  }, [youtubeAccounts, selectedAccountId]);
+
+  // Get the currently selected account
+  const youtubeAccount = youtubeAccounts.find(account => account.id === selectedAccountId);
   const channelData = youtubeAccount?.profile_data as YouTubeChannel | undefined;
+
+  // Function to select a different YouTube account
+  const selectAccount = (accountId: string) => {
+    const account = youtubeAccounts.find(acc => acc.id === accountId);
+    if (account) {
+      setSelectedAccountId(accountId);
+    }
+  };
 
   const refreshChannel = async (): Promise<void> => {
     setIsLoading(true);
@@ -45,6 +70,12 @@ export default function useYouTubeAccount(): UseYouTubeAccountResult {
 
       const response = await fetch('/api/social/youtube', {
         method: 'POST', // This is our refresh endpoint
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          accountId: selectedAccountId
+        }),
       });
 
       if (!response.ok) {
@@ -156,11 +187,14 @@ export default function useYouTubeAccount(): UseYouTubeAccountResult {
   };
 
   return {
+    youtubeAccounts,
     youtubeAccount,
     channelData,
     isLoading,
     error,
     refreshChannel,
+    selectAccount,
+    selectedAccountId,
     uploadVideo,
     getVideoAnalytics
   };

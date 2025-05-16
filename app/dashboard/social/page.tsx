@@ -24,16 +24,17 @@ export default function SocialPage() {
   const [activeTab, setActiveTab] = useState("accounts");
   const { accounts, isLoading: accountsLoading } = useSocialAccounts();
   const { account: tiktokAccount, loading: tiktokLoading } = useTikTokAccount();
-  const [hasYouTubeAccount, setHasYouTubeAccount] = useState(false);
+  const [youtubeAccounts, setYoutubeAccounts] = useState<any[]>([]);
   const [hasTikTokAccount, setHasTikTokAccount] = useState(false);
 
-  // Detect if user has YouTube/TikTok accounts connected
+  // Detect connected YouTube/TikTok accounts
   useEffect(() => {
     if (accounts && accounts.length > 0) {
-      const youtubeAccount = accounts.find(account =>
+      // Get all active YouTube accounts
+      const activeYoutubeAccounts = accounts.filter(account =>
         account.provider.toLowerCase() === 'youtube' && account.status === 'active'
       );
-      setHasYouTubeAccount(!!youtubeAccount);
+      setYoutubeAccounts(activeYoutubeAccounts);
 
       const tiktokAccount = accounts.find(account =>
         account.provider.toLowerCase() === 'tiktok' && account.status === 'active'
@@ -63,11 +64,11 @@ export default function SocialPage() {
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 max-w-xl"> {/* Adjusted grid columns */}
           <TabsTrigger value="accounts">Connected Accounts</TabsTrigger>
           <TabsTrigger value="activity">Account Activity</TabsTrigger>
-          <TabsTrigger value="youtube" disabled={!hasYouTubeAccount} className="relative">
+          <TabsTrigger value="youtube" disabled={youtubeAccounts.length === 0} className="relative">
             <div className="flex items-center gap-1">
               <Youtube className="h-4 w-4" />
-              <span>YouTube</span>
-              {!hasYouTubeAccount && (
+              <span>YouTube{youtubeAccounts.length > 1 ? ` (${youtubeAccounts.length})` : ''}</span>
+              {youtubeAccounts.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-sm text-xs">
                   Connect first
                 </div>
@@ -108,7 +109,7 @@ export default function SocialPage() {
         </TabsContent>
         
         <TabsContent value="youtube" className="mt-6">
-          {hasYouTubeAccount ? (
+          {youtubeAccounts.length > 0 ? (
             <Tabs defaultValue="youtube-channel" className="w-full">
               <TabsList className="grid w-full grid-cols-3 max-w-lg mb-4">
                 <TabsTrigger value="youtube-channel">Channel</TabsTrigger>

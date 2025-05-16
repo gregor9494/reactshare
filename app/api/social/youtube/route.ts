@@ -75,6 +75,8 @@ async function ensureUserExists(userId: string): Promise<boolean> {
  */
 export async function GET(request: NextRequest) {
   const session = await auth();
+  const url = new URL(request.url);
+  const accountId = url.searchParams.get('id');
   
   if (!session?.user?.id) {
     return NextResponse.json(
@@ -94,41 +96,80 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Get the user's YouTube account from the database
-    const { data: account, error } = await serviceClient
+    // Get the user's YouTube accounts from the database
+    let query = serviceClient
       .from('social_accounts')
       .select('*')
       .eq('user_id', session.user.id)
-      .eq('provider', 'youtube')
-      .single();
-
-    if (error) {
-      console.error('Error fetching YouTube account:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch YouTube account' },
-        { status: 500 }
-      );
+      .eq('provider', 'youtube');
+      
+    // If an account ID is specified, get only that account
+    if (accountId) {
+      const { data, error } = await query.eq('id', accountId).single();
+      
+      if (error) {
+        console.error('Error fetching YouTube account:', error);
+        return NextResponse.json(
+          { error: 'Failed to fetch YouTube account' },
+          { status: 500 }
+        );
+      }
+      
+      // If no account is found, return null
+      if (!data) {
+        return NextResponse.json({ account: null });
+      }
+      
+      // Process account to remove sensitive information
+      const safeAccount = {
+        id: data.id,
+        provider: data.provider,
+        provider_username: data.provider_username,
+        provider_account_id: data.provider_account_id,
+        status: data.status,
+        last_sync_at: data.last_sync_at,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        profile_data: data.profile_data
+      };
+      
+      return NextResponse.json({ account: safeAccount });
+    } else {
+      const { data, error } = await query.order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching YouTube accounts:', error);
+        return NextResponse.json(
+          { error: 'Failed to fetch YouTube accounts' },
+          { status: 500 }
+        );
+      }
+      
+      // If no accounts are found, return empty array
+      if (!data || data.length === 0) {
+        return NextResponse.json({ accounts: [] });
+      }
+      
+      // Process accounts to remove sensitive information
+      const safeAccounts = data.map(acc => ({
+        id: acc.id,
+        provider: acc.provider,
+        provider_username: acc.provider_username,
+        provider_account_id: acc.provider_account_id,
+        status: acc.status,
+        last_sync_at: acc.last_sync_at,
+        created_at: acc.created_at,
+        updated_at: acc.updated_at,
+        profile_data: acc.profile_data
+      }));
+      
+      return NextResponse.json({ accounts: safeAccounts });
     }
-
-    // If no account is found, return null
-    if (!account) {
-      return NextResponse.json({ account: null });
-    }
-
-    // Don't send sensitive token information to the client
-    const safeAccount = {
-      id: account.id,
-      provider: account.provider,
-      provider_username: account.provider_username,
-      provider_account_id: account.provider_account_id,
-      status: account.status,
-      last_sync_at: account.last_sync_at,
-      created_at: account.created_at,
-      updated_at: account.updated_at,
-      profile_data: account.profile_data
-    };
-
-    return NextResponse.json({ account: safeAccount });
+    
+    return NextResponse.json(
+      { error: 'This code path should never be reached' },
+      { status: 500 }
+    );
   } catch (error) {
     console.error('Unexpected error in YouTube account API:', error);
     return NextResponse.json(
@@ -191,12 +232,15 @@ export async function DELETE(request: NextRequest) {
 }
 
 /**
- * POST /api/social/youtube/refresh
+ * POST /api/social/youtube
  * Refreshes the YouTube account data and token if needed
  */
 export async function POST(request: NextRequest) {
   const session = await auth();
-  const { id } = await request.json();
+  
+  // Parse request body
+  const body = await request.json().catch(() => ({}));
+  const accountId = body.accountId;
   
   if (!session?.user?.id) {
     return NextResponse.json(
@@ -216,129 +260,158 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Get the account with tokens
-    const { data: account, error: fetchError } = await serviceClient
-      .from('social_accounts')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .eq('provider', 'youtube')
-      .single();
+    // Get the account(s) with tokens
+    const { data: accounts, error: fetchError } = accountId
+      ? await serviceClient
+          .from('social_accounts')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('provider', 'youtube')
+          .eq('id', accountId)
+      : await serviceClient
+          .from('social_accounts')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('provider', 'youtube')
+          .order('created_at', { ascending: false });
 
-    if (fetchError || !account) {
+    if (fetchError || !accounts || accounts.length === 0) {
       return NextResponse.json(
-        { error: 'YouTube account not found' },
+        { error: 'No YouTube accounts found' },
         { status: 404 }
       );
     }
-
-    // Check if the token is expired
-    const now = new Date();
-    const tokenExpiry = account.token_expires_at ? new Date(account.token_expires_at) : null;
-    const isTokenExpired = tokenExpiry && tokenExpiry <= now;
-
-    if (isTokenExpired && account.refresh_token) {
-      // Refresh the token
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: process.env.GOOGLE_CLIENT_ID || '',
-          client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-          refresh_token: account.refresh_token,
-          grant_type: 'refresh_token'
-        })
-      });
-
-      const tokenData = await tokenResponse.json();
-
-      if (tokenData.error) {
-        // Update account status to token_expired
-        await serviceClient
-          .from('social_accounts')
-          .update({ status: 'token_expired' })
-          .eq('id', account.id);
-
-        return NextResponse.json(
-          { error: 'Failed to refresh token', details: tokenData },
-          { status: 401 }
-        );
-      }
-
-      // Update the access token
-      await serviceClient
-        .from('social_accounts')
-        .update({
-          access_token: tokenData.access_token,
-          token_expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
-          status: 'active'
-        })
-        .eq('id', account.id);
-    }
-
-    // Get the current access token (which might have just been refreshed)
-    const { data: refreshedAccount } = isTokenExpired && account.refresh_token
-      ? await serviceClient.from('social_accounts').select('access_token').eq('id', account.id).single()
-      : { data: account };
+    
+    // Get the target account(s) - either the specified one or all active ones
+    const targetAccounts = accountId 
+      ? accounts.filter(acc => acc.id === accountId)
+      : accounts;
       
-    // Fetch fresh YouTube data
-    const headers = {
-      Authorization: `Bearer ${refreshedAccount.access_token}`
-    };
-
-    const youtubeResponse = await fetch(
-      'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
-      { headers }
-    );
-
-    const youtubeData = await youtubeResponse.json();
-    const channel = youtubeData.items?.[0];
-
-    if (!channel) {
+    if (targetAccounts.length === 0) {
       return NextResponse.json(
-        { error: 'Failed to fetch YouTube channel data' },
-        { status: 500 }
+        { error: 'Specified YouTube account not found' },
+        { status: 404 }
       );
     }
+    
+    // Process each account
+    const updatedAccounts = [];
+    
+    for (const account of targetAccounts) {
 
-    // Update the profile data
-    const profileData = {
-      id: channel.id,
-      title: channel.snippet?.title,
-      description: channel.snippet?.description,
-      thumbnails: channel.snippet?.thumbnails,
-      statistics: channel.statistics
-    };
-
-    const { error: updateError } = await serviceClient
-      .from('social_accounts')
-      .update({
-        provider_username: channel.snippet?.title,
-        profile_data: profileData,
-        last_sync_at: new Date().toISOString()
-      })
-      .eq('id', account.id);
-
-    if (updateError) {
-      console.error('Error updating YouTube profile data:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update YouTube profile data' },
-        { status: 500 }
-      );
+      try {
+        // Check if the token is expired
+        const now = new Date();
+        const tokenExpiry = account.token_expires_at ? new Date(account.token_expires_at) : null;
+        const isTokenExpired = tokenExpiry && tokenExpiry <= now;
+    
+        if (isTokenExpired && account.refresh_token) {
+          // Refresh the token
+          const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: process.env.GOOGLE_CLIENT_ID || '',
+              client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+              refresh_token: account.refresh_token,
+              grant_type: 'refresh_token'
+            })
+          });
+    
+          const tokenData = await tokenResponse.json();
+    
+          if (tokenData.error) {
+            // Update account status to token_expired
+            await serviceClient
+              .from('social_accounts')
+              .update({ status: 'token_expired' })
+              .eq('id', account.id);
+    
+            console.error(`Failed to refresh token for account ${account.id}:`, tokenData.error);
+            continue; // Skip to the next account
+          }
+    
+          // Update the access token
+          await serviceClient
+            .from('social_accounts')
+            .update({
+              access_token: tokenData.access_token,
+              token_expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
+              status: 'active'
+            })
+            .eq('id', account.id);
+        }
+    
+        // Get the current access token (which might have just been refreshed)
+        const { data: refreshedAccount } = isTokenExpired && account.refresh_token
+          ? await serviceClient.from('social_accounts').select('access_token').eq('id', account.id).single()
+          : { data: account };
+          
+        // Fetch fresh YouTube data
+        const headers = {
+          Authorization: `Bearer ${refreshedAccount.access_token}`
+        };
+    
+        const youtubeResponse = await fetch(
+          'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
+          { headers }
+        );
+    
+        const youtubeData = await youtubeResponse.json();
+        const channel = youtubeData.items?.[0];
+    
+        if (!channel) {
+          console.error(`Failed to fetch YouTube channel data for account ${account.id}`);
+          continue; // Skip to the next account
+        }
+    
+        // Update the profile data
+        const profileData = {
+          id: channel.id,
+          title: channel.snippet?.title,
+          description: channel.snippet?.description,
+          thumbnails: channel.snippet?.thumbnails,
+          statistics: channel.statistics
+        };
+    
+        const { error: updateError } = await serviceClient
+          .from('social_accounts')
+          .update({
+            provider_username: channel.snippet?.title,
+            profile_data: profileData,
+            last_sync_at: new Date().toISOString()
+          })
+          .eq('id', account.id);
+    
+        if (updateError) {
+          console.error(`Error updating YouTube profile data for account ${account.id}:`, updateError);
+          continue; // Skip to the next account
+        }
+    
+        // Add the updated account to the result list (without sensitive data)
+        updatedAccounts.push({
+          ...account,
+          profile_data: profileData,
+          provider_username: channel.snippet?.title,
+          last_sync_at: new Date().toISOString(),
+          // Remove sensitive fields
+          access_token: undefined,
+          refresh_token: undefined
+        });
+      } catch (accountError) {
+        console.error(`Error processing YouTube account ${account.id}:`, accountError);
+        // Continue with other accounts even if one fails
+      }
     }
-
-    // Return the updated account (without sensitive data)
-    const updatedAccount = {
-      ...account,
-      profile_data: profileData,
-      provider_username: channel.snippet?.title,
-      last_sync_at: new Date().toISOString(),
-      // Remove sensitive fields
-      access_token: undefined,
-      refresh_token: undefined
-    };
-
-    return NextResponse.json({ account: updatedAccount });
+    
+    // Return the updated accounts (single or multiple depending on the request)
+    if (accountId) {
+      return NextResponse.json({ 
+        account: updatedAccounts.length > 0 ? updatedAccounts[0] : null 
+      });
+    } else {
+      return NextResponse.json({ accounts: updatedAccounts });
+    }
   } catch (error) {
     console.error('Unexpected error refreshing YouTube account:', error);
     return NextResponse.json(

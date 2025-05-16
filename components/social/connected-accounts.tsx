@@ -353,9 +353,9 @@ export function ConnectedAccounts() {
         )
       })}
 
-      {/* Available platforms to connect - show only if available AND not already connected */}
+      {/* Available platforms to connect - show all available platforms regardless of connection status */}
       {platforms
-        .filter(platform => platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()))
+        .filter(platform => platform.isAvailable)
         .map((platform, idx) => (
           <div key={`platform-${idx}`} className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
@@ -372,9 +372,11 @@ export function ConnectedAccounts() {
             <div className="ml-auto">
               <Button
                 onClick={platform.connectAction}
-                disabled={!platform.isAvailable || accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) || (platform.name === "YouTube" && isConnectingYouTube)}
+                disabled={!platform.isAvailable || (platform.name === "YouTube" && isConnectingYouTube)}
               >
-                Connect {platform.name}
+                {accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) 
+                  ? `Connect Another ${platform.name} Account` 
+                  : `Connect ${platform.name}`}
               </Button>
             </div>
           </div>
@@ -392,14 +394,16 @@ export function ConnectedAccounts() {
                 <Button
                   key={`connect-${idx}`}
                   onClick={platform.connectAction}
-                  disabled={!platform.isAvailable || accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) || (platform.name === "YouTube" && isConnectingYouTube)}
-                  variant={platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) ? "default" : "outline"}
+                  disabled={!platform.isAvailable || (platform.name === "YouTube" && isConnectingYouTube)}
+                  variant={platform.isAvailable ? "default" : "outline"}
                   className="flex items-center gap-2"
                 >
                   {/* Use capitalized component syntax */}
                   {React.createElement(platform.icon, { className: "h-4 w-4" })}
-                  {accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) ? `${platform.name} (Connected)` : platform.name}
-                  {!platform.isAvailable && !accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) && " (Coming Soon)"}
+                  {accounts.some(acc => acc.provider.toLowerCase() === platform.name.toLowerCase()) 
+                    ? `${platform.name} (Add Another)` 
+                    : platform.name}
+                  {!platform.isAvailable && " (Coming Soon)"}
                 </Button>
               ))}
           </div>

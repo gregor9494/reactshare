@@ -3,11 +3,11 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { checkForOAuthErrors, logOAuthDebugInfo } from '@/lib/oauth-debug'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Youtube, RefreshCw, Loader2, AlertTriangle, Check } from 'lucide-react'
 import { YouTubeAnalytics } from './youtube-analytics'
 import useYouTubeAccount from '@/hooks/use-youtube-account'
@@ -15,7 +15,7 @@ import useYouTubeOAuth from '@/hooks/use-youtube-oauth'
 import { formatDistanceToNow } from 'date-fns'
 
 export function YouTubeIntegration() {
-  const { youtubeAccount, channelData, isLoading, error, refreshChannel } = useYouTubeAccount()
+  const { youtubeAccounts, youtubeAccount, channelData, isLoading, error, refreshChannel, selectAccount, selectedAccountId } = useYouTubeAccount()
   const { connectToYouTube, isConnecting } = useYouTubeOAuth()
   const [activeTab, setActiveTab] = useState<string>('overview')
   const [redirectUriError, setRedirectUriError] = useState(false)
@@ -178,15 +178,31 @@ export function YouTubeIntegration() {
             <Youtube className="h-5 w-5 text-red-600" />
             <CardTitle>YouTube Channel</CardTitle>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh} 
-            disabled={isLoading}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {youtubeAccounts.length > 1 && (
+              <Select value={selectedAccountId || ''} onValueChange={(value) => selectAccount(value)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {youtubeAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.provider_username || 'YouTube Account'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRefresh} 
+              disabled={isLoading}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
         <CardDescription>Manage your YouTube channel integration</CardDescription>
       </CardHeader>
@@ -228,7 +244,7 @@ export function YouTubeIntegration() {
           </div>
 
           {/* Connection status badge */}
-          {youtubeAccount.status === 'active' ? (
+          {youtubeAccount && youtubeAccount.status === 'active' ? (
             <div className="ml-auto flex items-center text-green-600">
               <Check className="mr-1 h-4 w-4" />
               <span className="text-sm">Connected</span>
