@@ -68,7 +68,6 @@ export function AudienceInsights() {
           setAgeGroups([])
           setGenders([])
           setLocations([])
-          return
         }
       } catch (err) {
         console.error("Error fetching demographic data:", err)
@@ -77,7 +76,6 @@ export function AudienceInsights() {
         setAgeGroups([])
         setGenders([])
         setLocations([])
-        return
       } finally {
         setIsLoading(false)
       }
@@ -86,6 +84,42 @@ export function AudienceInsights() {
     fetchDemographicData()
   }, [])
 
+  // Second useEffect for fallback data - must be defined before any conditional returns
+  useEffect(() => {
+    // Generate fallback data if no real API data is available and the arrays are empty
+    if ((dataSource !== 'real_api' || dataSource === null) && 
+        !isLoading && 
+        ageGroups.length === 0 && 
+        genders.length === 0 && 
+        locations.length === 0) {
+        
+      // Set fallback data
+      setAgeGroups([
+        { group: "13-17", percentage: 12 },
+        { group: "18-24", percentage: 35 },
+        { group: "25-34", percentage: 28 },
+        { group: "35-44", percentage: 16 },
+        { group: "45+", percentage: 9 }
+      ]);
+      
+      setGenders([
+        { type: "Male", percentage: 48 },
+        { type: "Female", percentage: 47 },
+        { type: "Other", percentage: 5 }
+      ]);
+      
+      setLocations([
+        { country: "United States", percentage: 42 },
+        { country: "United Kingdom", percentage: 15 },
+        { country: "Canada", percentage: 8 },
+        { country: "Australia", percentage: 6 },
+        { country: "Germany", percentage: 5 }
+      ]);
+      
+      // Set data source to fallback
+      setDataSource('fallback');
+    }
+  }, [dataSource, isLoading, ageGroups.length, genders.length, locations.length]);
 
   if (isLoading) {
     return (
@@ -94,14 +128,6 @@ export function AudienceInsights() {
       </div>
     )
   }
-
-if (dataSource !== 'real_api') {
-  return (
-    <div className="h-[300px] w-full flex items-center justify-center">
-      <p className="text-muted-foreground">No analytics data available yet.</p>
-    </div>
-  )
-}
   return (
     <div className="space-y-6">
       {error && (

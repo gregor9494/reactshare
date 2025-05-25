@@ -192,31 +192,53 @@ export default function AnalyticsPage() {
             </TabsContent>
 
             <TabsContent value="audience" className="py-4" key={`audience-${lastRefreshed?.toISOString()}`}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Audience Demographics</CardTitle>
-                  <CardDescription>Detailed breakdown of your audience</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex h-[400px] items-center justify-center">
-                    <p className="text-muted-foreground">Detailed audience analytics will appear here</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+                <Card className="col-span-4">
+                  <CardHeader>
+                    <CardTitle>Audience Demographics</CardTitle>
+                    <CardDescription>Age, gender and location breakdown</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <AudienceInsights />
+                  </CardContent>
+                </Card>
+
+                <Card className="col-span-3">
+                  <CardHeader>
+                    <CardTitle>Audience Growth</CardTitle>
+                    <CardDescription>New subscribers/followers over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <PerformanceChart />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="content" className="py-4" key={`content-${lastRefreshed?.toISOString()}`}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Content Performance</CardTitle>
-                  <CardDescription>Analytics for individual videos</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex h-[400px] items-center justify-center">
-                    <p className="text-muted-foreground">Content performance analytics will appear here</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+                <Card className="col-span-4">
+                  <CardHeader>
+                    <CardTitle>Top Performing Content</CardTitle>
+                    <CardDescription>Your most successful videos</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <TopContent />
+                  </CardContent>
+                </Card>
+
+                <Card className="col-span-3">
+                  <CardHeader>
+                    <CardTitle>Content Categories</CardTitle>
+                    <CardDescription>Performance by video category</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[400px]">
+                    <PlatformBreakdown />
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="platforms" className="py-4" key={`platforms-${lastRefreshed?.toISOString()}`}>
@@ -224,17 +246,27 @@ export default function AnalyticsPage() {
             </TabsContent>
 
             <TabsContent value="engagement" className="py-4" key={`engagement-${lastRefreshed?.toISOString()}`}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Engagement Metrics</CardTitle>
-                  <CardDescription>Likes, comments, shares, and more</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex h-[400px] items-center justify-center">
-                    <p className="text-muted-foreground">Engagement analytics will appear here</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+                <Card className="col-span-3">
+                  <CardHeader>
+                    <CardTitle>Engagement Metrics</CardTitle>
+                    <CardDescription>Likes, comments, shares, and more</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <OverviewMetrics />
+                  </CardContent>
+                </Card>
+
+                <Card className="col-span-4">
+                  <CardHeader>
+                    <CardTitle>Engagement Over Time</CardTitle>
+                    <CardDescription>Trends in audience interaction</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <PerformanceChart />
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
           </Tabs>
     </div>
