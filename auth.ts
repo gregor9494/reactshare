@@ -2,22 +2,15 @@ import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import Google from 'next-auth/providers/google'; // Import Google provider
 import { authConfig } from './auth.config';
-import { createClient } from '@supabase/supabase-js'; // Import Supabase client
 import { z } from 'zod'; // Using Zod for input validation
 import { getTikTokOAuthConfig } from './lib/tiktok-oauth-provider';
+import { createSupabaseClient, createSupabaseServiceClient, supabaseUrl } from './lib/supabase-server';
 
-// Initialize Supabase client using environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Supabase URL or Anon Key is missing in environment variables. Please check your .env.local file.');
-}
-
+// Initialize Supabase client using the utility function
 // Note: Using the anon key here is standard for client-side operations like login.
 // For server-side operations requiring elevated privileges (like in API routes later),
 // we might need to use the service_role key.
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createSupabaseClient();
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig, // Spread the base config (pages, session strategy, basic callbacks)
@@ -179,10 +172,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             console.log(`[Auth] OAuth profile user ID from provider: ${user?.id}, email: ${profile?.email}`);
 
             // Store YouTube OAuth tokens with service role for database access
-            const serviceClient = createClient(
-              supabaseUrl as string,
-              process.env.SUPABASE_SERVICE_ROLE_KEY as string
-            );
+            const serviceClient = createSupabaseServiceClient();
             
             // The database trigger 'on_auth_user_created' handles new user creation in public.users
             // if the OAuth user (user.id) is signing up for the first time.
@@ -299,10 +289,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           console.log(`[Auth] Linking TikTok account to existing app user: ${appUserId}`);
           console.log(`[Auth] OAuth profile user ID from TikTok provider: ${user?.id}, email: ${profile?.email}`);
           // Store TikTok OAuth tokens with service role for database access
-          const serviceClient = createClient(
-            supabaseUrl as string,
-            process.env.SUPABASE_SERVICE_ROLE_KEY as string
-          );
+          const serviceClient = createSupabaseServiceClient();
           
           // Get user's TikTok account data
           const headers = {

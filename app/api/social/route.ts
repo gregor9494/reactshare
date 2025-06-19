@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { auth } from '@/auth';
 import { SocialAccount } from '@/lib/types';
+import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables');
-}
-
-const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+// Initialize Supabase client with proper error handling
+const serviceClient = createSupabaseServiceClient();
 
 /**
  * GET /api/social
@@ -36,8 +29,36 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching social accounts:', error);
+      
+      // Check if it's a connection error
+      if (error.message?.includes('fetch failed') || error.message?.includes('ENOTFOUND')) {
+        return NextResponse.json(
+          {
+            error: 'Database connection failed. Please check your Supabase configuration.',
+            details: 'The Supabase project URL may be incorrect or the project may not exist.',
+            hint: 'Verify your NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local'
+          },
+          { status: 503 }
+        );
+      }
+      
+      // Check if it's a table not found error
+      if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+        return NextResponse.json(
+          {
+            error: 'Database table not found',
+            details: 'The social_accounts table does not exist in your database.',
+            hint: 'Run the database setup script in your Supabase SQL Editor'
+          },
+          { status: 500 }
+        );
+      }
+      
       return NextResponse.json(
-        { error: 'Failed to fetch social accounts' },
+        {
+          error: 'Failed to fetch social accounts',
+          details: error.message
+        },
         { status: 500 }
       );
     }
