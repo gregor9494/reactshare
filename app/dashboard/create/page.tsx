@@ -191,7 +191,8 @@ export default function CreatePage() {
       setSourceVideoUrl(values.sourceUrl); // This is the original URL submitted by the user
       
       // Start polling for download status
-      await pollDownloadStatus(downloadResult.id);
+      // Pass the source URL to the poller so it's available when calling proceedToRecording
+      await pollDownloadStatus(downloadResult.id, values.sourceUrl);
 
     } catch (err) {
       console.error("Source video download error:", err);
@@ -233,20 +234,19 @@ export default function CreatePage() {
   };
 
   // Proceed to recording step (after creating reaction metadata)
-  const proceedToRecording = async () => {
-    console.log('proceedToRecording called');
-    const videoIdToUse = sourceVideoId || selectedLibraryVideoId;
+  const proceedToRecording = async (videoId?: string, videoUrl?: string) => {
+    console.log('proceedToRecording called with videoId:', videoId, 'and videoUrl:', videoUrl);
+    const videoIdToUse = videoId || sourceVideoId || selectedLibraryVideoId;
+    const finalVideoUrl = videoUrl || sourceVideoUrl;
 
     if (!videoIdToUse) {
       setMessage({ type: 'error', text: 'Please select or download a source video first.' });
       return;
     }
-    
-    // Ensure sourceVideoUrl is set (it should be by now)
-    if (!sourceVideoUrl) {
-        // This case should ideally not happen if logic is correct
-        setMessage({ type: 'error', text: 'Source video URL is missing.' });
-        return;
+
+    if (!finalVideoUrl) {
+      setMessage({ type: 'error', text: 'Source video URL is missing.' });
+      return;
     }
 
     setIsLoading(true);
@@ -254,17 +254,10 @@ export default function CreatePage() {
 
     try {
       // Step 1: Create reaction metadata via API route
-      // This should use source_video_id if available, or source_video_url
-      const payload: { source_video_id?: string | null; source_video_url?: string | null; title: string } = {
-        title: `Reaction to ${sourceVideoUrl}`, // Default title
+      const payload = {
+        title: `Reaction to ${finalVideoUrl}`,
+        source_video_id: videoIdToUse,
       };
-      if (sourceVideoId) { // Prefer source_video_id if we have it (from download or library)
-        payload.source_video_id = sourceVideoId;
-      } else if (sourceVideoUrl) { // Fallback to URL if ID isn't set (should be rare)
-        payload.source_video_url = sourceVideoUrl;
-      } else {
-        throw new Error("Neither source_video_id nor source_video_url is available to create reaction.");
-      }
 
       const metadataResponse = await fetch('/api/reactions', {
         method: 'POST',
@@ -283,11 +276,10 @@ export default function CreatePage() {
       }
       setReactionId(reactionMetadata.id);
       console.log('Reaction metadata created, ID:', reactionMetadata.id);
-      
-      // Update sourceVideoId if it wasn't set but was derived (e.g. from selectedLibraryVideoId)
-      if (!sourceVideoId && videoIdToUse) {
-        setSourceVideoId(videoIdToUse);
-      }
+
+      // Ensure component state is updated for subsequent steps
+      if (videoIdToUse) setSourceVideoId(videoIdToUse);
+      if (finalVideoUrl) setSourceVideoUrl(finalVideoUrl);
 
       setCurrentStep('record');
       setMessage(null);
@@ -352,7 +344,7 @@ export default function CreatePage() {
   };
 
   // Poll for download status
-  const pollDownloadStatus = async (downloadId: string) => {
+  const pollDownloadStatus = async (downloadId: string, sourceUrl: string) => {
     const maxAttempts = 30; // Maximum polling attempts (5 minutes with 10s interval)
     const pollInterval = 10000; // Poll every 10 seconds
     let attempts = 0;
@@ -382,10 +374,14 @@ export default function CreatePage() {
         // Handle different statuses
         switch(statusResult.status) {
           case 'completed':
-            setIsLoading(false);
             setMessage({ type: 'success', text: 'Source video downloaded successfully!' });
             console.log('Download completed successfully, source_video_id:', downloadId);
-            setCurrentStep('record');
+            
+            // This is the key fix: instead of just setting the step,
+            // we call the function that creates the reaction metadata and THEN sets the step.
+            // Pass the ID and URL to avoid stale state issues.
+            proceedToRecording(downloadId, sourceUrl);
+            
             return true; // Stop polling
             
           case 'error':
@@ -602,7 +598,7 @@ export default function CreatePage() {
                 )}
               </CardContent>
               <div className="flex justify-end mt-6">
-                <Button onClick={proceedToRecording} disabled={!selectedLibraryVideoId || isLoading} size="lg">
+                <Button onClick={() => proceedToRecording()} disabled={!selectedLibraryVideoId || isLoading} size="lg">
                   Continue to Recording
                 </Button>
               </div>

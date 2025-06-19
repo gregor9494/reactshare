@@ -78,29 +78,16 @@ export interface YouTubeChannel {
 export interface SocialShare {
   id: string;
   user_id: string;
-  reaction_id: string | null;
-  provider: string; // 'youtube', 'instagram', 'twitter', etc.
-  provider_post_id: string | null;
-  provider_post_url: string | null;
-  status: 'pending' | 'published' | 'scheduled' | 'failed';
-  scheduled_for: string | null;
+  reaction_id: string;
+  social_account_id: string;
+  platform: string; // 'youtube', 'instagram', 'twitter', etc.
+  platform_post_id: string | null;
+  status: 'pending' | 'scheduled' | 'published' | 'failed';
+  scheduled_at: string | null;
   published_at: string | null;
-  metadata: {
-    title: string;
-    description?: string;
-    privacy?: 'public' | 'unlisted' | 'private';
-    tags?: string[];
-    thumbnailUrl?: string;
-    [key: string]: any;
-  };
-  analytics?: {
-    views?: number;
-    likes?: number;
-    comments?: number;
-    shares?: number;
-    [key: string]: any;
-  };
-  last_analytics_sync: string | null;
+  content: string | null;
+  metadata: any | null; // JSONB can be flexible
+  error_message: string | null;
   created_at: string;
   updated_at: string;
 }
