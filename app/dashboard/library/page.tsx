@@ -23,7 +23,6 @@ export default function LibraryPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [videoUrl, setVideoUrl] = useState("");
-  const [reactionUrl, setReactionUrl] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState("source");
 
@@ -68,7 +67,7 @@ export default function LibraryPage() {
     }
   }, [session, sessionStatus, currentFolderId]);
 
-  const handleDownload = async (url: string, type: 'source' | 'reaction') => {
+  const handleDownload = async (url: string) => {
     if (!url.trim()) {
       toast.error("Please enter a video URL.");
       return;
@@ -79,10 +78,10 @@ export default function LibraryPage() {
     }
 
     setIsDownloading(true);
-    const toastId = `download-toast-${type}`;
-    toast.info(`Initiating ${type} video download...`, { id: toastId });
+    const toastId = `download-toast-source`;
+    toast.info(`Initiating source video download...`, { id: toastId });
 
-    const endpoint = type === 'source' ? '/api/videos/download' : '/api/reactions/download';
+    const endpoint = '/api/videos/download';
     
     try {
       const response = await fetch(endpoint, {
@@ -97,16 +96,15 @@ export default function LibraryPage() {
       }
 
       toast.success(
-        `${type.charAt(0).toUpperCase() + type.slice(1)} download started!`,
+        `Source video download started!`,
         { id: toastId, duration: 8000 }
       );
 
-      if (type === 'source') setVideoUrl("");
-      if (type === 'reaction') setReactionUrl("");
+      setVideoUrl("");
 
       setTimeout(() => window.location.reload(), 3000);
     } catch (error: any) {
-      console.error(`Download error for ${type}:`, error);
+      console.error(`Download error for source:`, error);
       toast.error(`Download failed: ${error.message}`, { id: toastId });
     } finally {
       setIsDownloading(false);
@@ -148,35 +146,12 @@ export default function LibraryPage() {
           />
         </div>
         <Button
-          onClick={() => handleDownload(videoUrl, 'source')}
+          onClick={() => handleDownload(videoUrl)}
           disabled={isDownloading || !videoUrl.trim()}
           className="w-full sm:w-auto"
         >
           <Download className="mr-2 h-4 w-4" />
           Download Source
-        </Button>
-      </div>
-      <div className="mb-6 flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm sm:flex-row sm:items-end">
-        <div className="flex-grow">
-          <label htmlFor="reactionUrl" className="mb-1 block text-sm font-medium text-foreground">
-            Download Reaction Video from URL
-          </label>
-          <Input
-            id="reactionUrl"
-            type="url"
-            placeholder="Enter reaction video URL"
-            value={reactionUrl}
-            onChange={(e) => setReactionUrl(e.target.value)}
-            disabled={isDownloading}
-          />
-        </div>
-        <Button
-          onClick={() => handleDownload(reactionUrl, 'reaction')}
-          disabled={isDownloading || !reactionUrl.trim()}
-          className="w-full sm:w-auto"
-        >
-          <Download className="mr-2 h-4 w-4" />
-          Download Reaction
         </Button>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
