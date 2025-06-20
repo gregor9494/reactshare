@@ -7,7 +7,6 @@ import React from 'react';
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      {/* You could wrap children with other providers here */}
       {children}
     </SessionProvider>
   );

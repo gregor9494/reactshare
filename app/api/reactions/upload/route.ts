@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth'; // Import auth function from next-auth
-import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 // Schema for requesting a signed upload URL
 const uploadRequestSchema = z.object({
@@ -10,17 +10,6 @@ const uploadRequestSchema = z.object({
   reactionId: z.string().uuid({ message: 'Valid reaction ID is required' }), // To associate the upload
 });
 
-// Initialize Supabase client using SERVICE_ROLE_KEY for server-side operations
-// Generating signed URLs requires admin privileges or specific policies.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Supabase URL or Service Key missing for upload route.');
-}
-
-// Create Supabase admin client instance
-const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 const BUCKET_NAME = 'reaction-videos'; // Match the bucket name created in Supabase
 const SIGNED_URL_EXPIRES_IN = 60 * 5; // URL valid for 5 minutes
@@ -55,6 +44,7 @@ export async function POST(request: Request) {
   const storagePath = `${userId}/${reactionId}/${sanitizedFileName}`;
 
   try {
+    const supabaseAdmin = createSupabaseServiceClient();
     // Optional: Verify the reactionId belongs to the current user before generating URL
     const { data: reactionData, error: reactionError } = await supabaseAdmin
       .from('reactions')

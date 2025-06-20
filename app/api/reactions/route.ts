@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth'; // Import auth function from next-auth
-import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 // Schema for creating a new reaction metadata entry
 const createReactionSchema = z.object({
@@ -12,22 +12,10 @@ const createReactionSchema = z.object({
   message: 'Either source_video_url or source_video_id must be provided',
 });
 
-// Initialize Supabase client using SERVICE_ROLE_KEY for server-side operations
-// This allows bypassing RLS if needed, but we'll still filter by user_id manually for safety.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Supabase URL or Service Key missing for reactions route.');
-  // Avoid throwing during runtime, handle gracefully in handlers
-}
-
-// Create a Supabase client instance specifically for this route
-// Consider creating a shared server-side client utility later
-const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 // --- POST Handler: Create new reaction metadata ---
 export async function POST(request: Request) {
+  const supabaseAdmin = createSupabaseServiceClient();
   const session = await auth(); // Get session using next-auth
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -65,9 +53,8 @@ export async function POST(request: Request) {
       
       const { data: sourceVideo, error: sourceVideoError } = await supabaseAdmin
         .from('source_videos')
-        .select('public_url, storage_path, thumbnail_url') // Also fetch storage_path
+        .select('public_url, storage_path, thumbnail_url, status') // Also fetch storage_path
         .eq('id', source_video_id)
-        .eq('user_id', userId) // Ensure user owns the source video
         .maybeSingle();
 
       if (sourceVideoError) {
@@ -75,16 +62,16 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch source video details.' }, { status: 500 });
       }
 
-      if (!sourceVideo || !sourceVideo.public_url) {
-        let errorMsg = `Source video not found or is missing required fields for id ${source_video_id}.`;
-        if (sourceVideo && !sourceVideo.public_url) errorMsg += " Missing public_url.";
-        if (sourceVideo && !sourceVideo.storage_path) errorMsg += " Missing storage_path (but continuing).";
-        console.error(`POST /api/reactions: ${errorMsg}`);
-        
-        if (!sourceVideo || !sourceVideo.public_url) {
-          return NextResponse.json({ error: 'Source video not found or is missing public URL.' }, { status: 400 });
-        }
-        // We'll continue if just the storage_path is missing, but log the warning
+      if (!sourceVideo) {
+        return NextResponse.json({ error: 'Source video not found.' }, { status: 404 });
+      }
+
+      if (sourceVideo.status !== 'completed') {
+        return NextResponse.json({ error: `Source video is not ready yet. Status: ${sourceVideo.status}` }, { status: 400 });
+      }
+
+      if (!sourceVideo.public_url) {
+        return NextResponse.json({ error: 'Source video is missing a public URL.' }, { status: 400 });
       }
       
       reactionData.source_video_url = sourceVideo.public_url;
@@ -147,6 +134,7 @@ export async function POST(request: Request) {
 // --- GET Handler: Fetch user's reactions ---
 export async function GET(request: Request) {
   try {
+    const supabaseAdmin = createSupabaseServiceClient();
     const session = await auth(); // Get session using next-auth
     if (!session?.user?.id) {
       console.error('GET /api/reactions: Unauthorized - No session or user ID.');

@@ -186,7 +186,7 @@ CREATE POLICY "Users can manage their own source videos" ON storage.objects
   WITH CHECK (bucket_id = 'source-videos' AND auth.uid() = owner);
 
 DROP POLICY IF EXISTS "Users can manage their own reaction videos" ON storage.objects;
-CREATE POLICY "Users can manage their own reaction videos" ON storage.objects
+CREATE POLICY "Allow reaction videos operations" ON storage.objects
   FOR ALL
-  USING (bucket_id = 'reaction-videos' AND auth.uid() = owner)
-  WITH CHECK (bucket_id = 'reaction-videos' AND auth.uid() = owner);
+  USING (bucket_id = 'reaction-videos')
+  WITH CHECK (bucket_id = 'reaction-videos');

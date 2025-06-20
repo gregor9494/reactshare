@@ -4,13 +4,14 @@ import Google from 'next-auth/providers/google'; // Import Google provider
 import { authConfig } from './auth.config';
 import { z } from 'zod'; // Using Zod for input validation
 import { getTikTokOAuthConfig } from './lib/tiktok-oauth-provider';
-import { createSupabaseClient, createSupabaseServiceClient, supabaseUrl } from './lib/supabase-server';
+import { createSupabaseServiceClient } from './lib/supabase-server';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client using the utility function
 // Note: Using the anon key here is standard for client-side operations like login.
 // For server-side operations requiring elevated privileges (like in API routes later),
 // we might need to use the service_role key.
-const supabase = createSupabaseClient();
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig, // Spread the base config (pages, session strategy, basic callbacks)
@@ -461,6 +462,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           (session.user as any).youtubeTokenExpires = token.youtubeTokenExpires;
           (session.user as any).hasYouTubeAccess = true;
         }
+      }
+      // Pass the accessToken and refreshToken from the JWT token to the session
+      if (token.accessToken) {
+        (session as any).accessToken = token.accessToken;
+      }
+      if (token.refreshToken) {
+        (session as any).refreshToken = token.refreshToken;
       }
       return session;
     },

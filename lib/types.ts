@@ -1,3 +1,11 @@
+import 'next-auth';
+
+declare module 'next-auth' {
+  interface Session {
+    accessToken?: string;
+  }
+}
+
 // Define the Reaction interface based on the Supabase 'reactions' table schema
 export interface Reaction {
   id: string;

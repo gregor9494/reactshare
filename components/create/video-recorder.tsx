@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { createClient } from "@supabase/supabase-js"
+import { useState, useRef, useEffect, useMemo } from "react"
+import { useSession } from "next-auth/react"
+import { createSupabaseBrowserClient } from "@/lib/supabase-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -16,7 +17,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase URL or Anon Key missing for video recorder component.');
 }
 
-const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 const SOURCE_VIDEO_BUCKET_NAME = 'source-videos'; // For fetching source videos
 const REACTION_VIDEO_BUCKET_NAME = 'reaction-videos'; // For uploading new reactions
 
@@ -27,6 +27,17 @@ interface VideoRecorderProps {
 }
 
 export function VideoRecorder({ onRecordingComplete, sourceVideoId, reactionId }: VideoRecorderProps) {
+  const { data: session } = useSession();
+  const supabase = useMemo(() => {
+    return createSupabaseBrowserClient();
+  }, []);
+// Authenticate Supabase client with NextAuth session for storage RLS
+useEffect(() => {
+  if (session?.accessToken) {
+    // @ts-ignore: Ensure Supabase client uses NextAuth JWT for storage requests
+    supabase.auth.setAuth(session.accessToken);
+  }
+}, [session, supabase]);
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -179,6 +190,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId, reactionId }
     console.log('Initializing source video', { sourceVideoId, videoElement: !!sourceVideoRef.current });
 
     const fetchSourceVideo = async () => {
+      if (!supabase) return;
       // Store reference locally to avoid null checks on every access
       const videoElement = sourceVideoRef.current;
       if (!videoElement) return;
@@ -373,6 +385,7 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId, reactionId }
     };
 
     fetchSourceVideo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceVideoId, viewMode]);
   
   // Handle recording start/stop
@@ -635,6 +648,12 @@ export function VideoRecorder({ onRecordingComplete, sourceVideoId, reactionId }
     setIsUploading(true);
     setUploadError(null);
     console.log('[VideoRecorder] handleUploadAndFinalize started for reactionId:', reactionId);
+
+    if (!supabase) {
+      setUploadError("Supabase client not initialized. Is the user logged in?");
+      if (onRecordingComplete) onRecordingComplete(blob, null);
+      return;
+    }
 
     try {
       const fileName = `reaction_${reactionId}_${Date.now()}.webm`;

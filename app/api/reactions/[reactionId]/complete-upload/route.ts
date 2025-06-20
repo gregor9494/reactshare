@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Supabase URL or Service Key missing for complete-upload route.');
-  // Avoid throwing during runtime, handle gracefully
-}
-const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 const completeUploadSchema = z.object({
   storagePath: z.string().min(1, { message: 'Storage path is required' }),
@@ -24,12 +15,14 @@ interface RouteParams {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  // @ts-ignore Awaiting dynamic route params Proxy
+  const { reactionId } = await params;
+  const supabaseAdmin = createSupabaseServiceClient();
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const userId = session.user.id;
-  const { reactionId } = params;
 
   if (!reactionId) {
     return NextResponse.json({ error: 'Reaction ID is missing from URL' }, { status: 400 });
@@ -58,7 +51,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .from('reactions')
       .select('id, user_id, status')
       .eq('id', reactionId)
-      .eq('user_id', userId)
+      // Ownership verification bypassed by service role; checking manually below
       .single(); // Use single to ensure it exists and belongs to user
 
     if (fetchError) {
@@ -71,6 +64,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!reaction) {
         console.error(`[CompleteUpload] Reaction ${reactionId} not found for user ${userId} (after fetch, no error but no data).`);
+        return NextResponse.json({ error: 'Reaction not found or access denied.' }, { status: 404 });
+    }
+    // Ensure reaction belongs to session user
+    if (reaction.user_id !== userId) {
         return NextResponse.json({ error: 'Reaction not found or access denied.' }, { status: 404 });
     }
     console.log(`[CompleteUpload] Found reaction: ${JSON.stringify(reaction)}`);
@@ -88,7 +85,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .from('reactions')
       .update(updatePayload) // Correctly pass the updatePayload object
       .eq('id', reactionId)
-      .eq('user_id', userId) // Ensure user_id match for safety, though covered by initial fetch
+      // Ownership already verified above
       .select()
       .single();
 

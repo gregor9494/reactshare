@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseAPIClient } from '@/lib/supabase-api';
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Supabase URL or Service Key missing for reaction detail route.');
-  // Avoid throwing during runtime, handle gracefully
-}
-const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 interface RouteParams {
   params: {
@@ -23,6 +14,7 @@ interface RouteParams {
  * Fetches a single reaction by ID
  */
 export async function GET(request: NextRequest) {
+  const supabaseAdmin = await createSupabaseAPIClient();
   // Extract reactionId from URL path segments
   const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);
@@ -101,8 +93,7 @@ export async function GET(request: NextRequest) {
             const { data: updatedReaction, error: updateError } = await supabaseAdmin
               .from('reactions')
               .update({
-                reaction_video_storage_path: sourceVideo.storage_path,
-                status: 'uploaded'  // Update status since we now have a valid video path
+                reaction_video_storage_path: sourceVideo.storage_path
               })
               .eq('id', reaction.id)
               .select()
@@ -131,8 +122,7 @@ export async function GET(request: NextRequest) {
                 const { data: updatedReaction, error: updateError } = await supabaseAdmin
                   .from('reactions')
                   .update({
-                    reaction_video_storage_path: sourceData.videos[0].storage_path,
-                    status: 'uploaded'  // Update status since we now have a valid video path
+                    reaction_video_storage_path: sourceData.videos[0].storage_path
                   })
                   .eq('id', reaction.id)
                   .select()
@@ -171,6 +161,7 @@ export async function GET(request: NextRequest) {
  * Updates a reaction by ID
  */
 export async function PATCH(request: NextRequest) {
+  const supabaseAdmin = await createSupabaseAPIClient();
   // Extract reactionId from URL path segments
   const url = new URL(request.url);
   const segments = url.pathname.split('/').filter(Boolean);

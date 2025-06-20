@@ -393,8 +393,13 @@ export default function CreatePage() {
             return true; // Stop polling
             
           case 'processing':
+            console.log('Video is processing, continuing to poll...');
+            break;
           case 'downloading':
+            console.log('Video is downloading, continuing to poll...');
+            break;
           case 'uploading':
+            console.log('Video is uploading, continuing to poll...');
             // Continue polling - not done yet
             setMessage({
               type: 'success',

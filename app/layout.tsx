@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
-import { Providers } from '@/components/providers'; // Import the Providers component
+import { Providers } from '@/components/providers';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'ReactShare', // Updated title
-  description: 'Create, edit, and distribute reaction videos seamlessly.', // Updated description
-  // generator: 'v0.dev', // Optional: remove or keep
+  title: 'ReactShare',
+  description: 'Create, edit, and distribute reaction videos seamlessly.',
 };
 
 export default function RootLayout({
@@ -15,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className={inter.className}>
         <Providers>
           {children}
         </Providers>

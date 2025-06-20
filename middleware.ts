@@ -1,9 +1,17 @@
-import NextAuth from 'next-auth';
-import { authConfig } from './auth.config'; // Import the config with the authorized callback
+import { createSupabaseMiddlewareClient } from './lib/supabase-middleware';
+import { auth } from '@/auth';
+import { NextRequest, NextResponse } from 'next/server';
 
-// Initialize NextAuth with the configuration.
-// The `auth` function returned here also acts as the middleware.
-const { auth } = NextAuth(authConfig);
+export async function middleware(request: NextRequest) {
+  const { supabase, response } = await createSupabaseMiddlewareClient(request);
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    return await auth(request as any);
+  }
+
+  return response;
+}
 
 // Define which routes should be protected by the middleware
 // This is generally more efficient than checking paths inside the authorized callback
@@ -27,6 +35,3 @@ export const config = {
     // '/api/reactions/:path*',
   ],
 };
-
-// Export the middleware function as the default export
-export default auth;
