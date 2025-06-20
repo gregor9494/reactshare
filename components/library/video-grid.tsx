@@ -15,13 +15,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Play, Edit, Share2, BarChart3, Trash2, Download, Plus, Loader2 } from "lucide-react";
-import { SourceVideo, Folder as FolderType } from '@/lib/types';
+import { Folder as FolderType } from '@/lib/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
+// Define grid video shape for this component
+export interface GridVideo {
+  id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  status: string;
+  created_at: string;
+  original_url?: string;
+  storage_path?: string | null;
+  file_format?: string;
+  file_size?: number;
+  duration?: number;
+}
+
 // Define props interface
 interface VideoGridProps {
-  videos: SourceVideo[]; // Accept an array of SourceVideo objects
+  videos: GridVideo[]; // Accept an array of grid video objects
   folders?: FolderType[]; // Optional folders for move operation
 }
 
