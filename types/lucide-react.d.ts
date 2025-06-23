@@ -31,6 +31,7 @@ declare module 'lucide-react' {
   export const Music: Icon;
   export const Palette: Icon;
   export const Play: Icon;
+  export const Pause: Icon;
   export const Plus: Icon;
   export const RefreshCw: Icon;
   export const Scissors: Icon;
