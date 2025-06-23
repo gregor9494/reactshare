@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   request: Request,
-  { params }: { params: { taskId: string } }
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
-    const { taskId } = params;
+    const { taskId } = await params;
     const MUREKA_AI_API_KEY = process.env.MUREKA_AI_API_KEY;
 
     if (!MUREKA_AI_API_KEY) {
