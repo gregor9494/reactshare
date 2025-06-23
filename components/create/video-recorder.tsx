@@ -19,6 +19,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const SOURCE_VIDEO_BUCKET_NAME = 'source-videos'; // For fetching source videos
 const REACTION_VIDEO_BUCKET_NAME = 'reaction-videos'; // For uploading new reactions
+const THUMBNAIL_BUCKET_NAME = 'reaction-thumbnails';
 
 interface VideoRecorderProps {
   onRecordingComplete?: (blob: Blob, storagePath: string | null) => void; // Pass storagePath back
@@ -631,6 +632,46 @@ useEffect(() => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 
+  const generateThumbnail = (videoBlob: Blob): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+  
+      if (!context) {
+        return reject(new Error('Failed to get canvas context'));
+      }
+  
+      video.src = URL.createObjectURL(videoBlob);
+      video.muted = true;
+  
+      video.onloadeddata = () => {
+        video.currentTime = 1; // Seek to 1 second
+      };
+  
+      video.onseeked = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+  
+        canvas.toBlob((thumbnailBlob) => {
+          if (thumbnailBlob) {
+            resolve(thumbnailBlob);
+          } else {
+            reject(new Error('Failed to create thumbnail blob.'));
+          }
+        }, 'image/jpeg', 0.8); // 80% quality
+  
+        URL.revokeObjectURL(video.src); // Clean up
+      };
+  
+      video.onerror = (e) => {
+        reject(new Error('Failed to load video for thumbnail generation.'));
+        URL.revokeObjectURL(video.src); // Clean up
+      };
+    });
+  };
+
   const handleUploadAndFinalize = async (blob: Blob) => {
     if (!reactionId) {
       console.error("Cannot upload: reactionId is missing.");
@@ -697,13 +738,44 @@ useEffect(() => {
       }
       
       console.log(`[VideoRecorder] Successfully uploaded reaction video to ${storagePath}`);
-
-      // 3. Call PATCH endpoint to finalize
+       // 3. Generate and upload thumbnail
+       let thumbnailUrl: string | null = null;
+       try {
+         console.log('[VideoRecorder] Generating thumbnail...');
+         const thumbnailBlob = await generateThumbnail(blob);
+         const thumbnailPath = `thumbnail_${reactionId}_${Date.now()}.jpeg`;
+         
+         const { error: thumbnailUploadError } = await supabase.storage
+           .from(THUMBNAIL_BUCKET_NAME)
+           .upload(thumbnailPath, thumbnailBlob, {
+             cacheControl: '3600',
+             upsert: true,
+           });
+ 
+         if (thumbnailUploadError) {
+           console.error('[VideoRecorder] Supabase thumbnail upload error:', thumbnailUploadError);
+           // Non-fatal, we can continue without a thumbnail
+         } else {
+           const { data: { publicUrl } } = supabase.storage.from(THUMBNAIL_BUCKET_NAME).getPublicUrl(thumbnailPath);
+           thumbnailUrl = publicUrl;
+           console.log(`[VideoRecorder] Generated public thumbnail URL: ${thumbnailUrl}`);
+         }
+       } catch (thumbError: any) {
+         console.error('[VideoRecorder] Error generating or uploading thumbnail:', thumbError);
+       }
+ 
+      // 4. Call PATCH endpoint to finalize
       console.log('[VideoRecorder] Attempting to call PATCH /api/reactions/.../complete-upload');
+      const finalizePayload: { storagePath: string; thumbnailUrl?: string } = {
+        storagePath,
+      };
+      if (thumbnailUrl) {
+        finalizePayload.thumbnailUrl = thumbnailUrl;
+      }
       const finalizeResponse = await fetch(`/api/reactions/${reactionId}/complete-upload`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storagePath }),
+        body: JSON.stringify(finalizePayload),
       });
       console.log('[VideoRecorder] Got response from PATCH /api/reactions/.../complete-upload:', finalizeResponse.status);
 

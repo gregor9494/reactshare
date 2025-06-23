@@ -6,6 +6,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase-server';
 
 const completeUploadSchema = z.object({
   storagePath: z.string().min(1, { message: 'Storage path is required' }),
+  thumbnailUrl: z.string().url().optional(),
 });
 
 interface RouteParams {
@@ -41,7 +42,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: `Invalid input: ${errorMessages}` }, { status: 400 });
   }
 
-  const { storagePath } = validationResult.data;
+  const { storagePath, thumbnailUrl } = validationResult.data;
   console.log(`[CompleteUpload] PATCH request for reactionId: ${reactionId}, userId: ${userId}, storagePath: ${storagePath}`);
 
   try {
@@ -74,11 +75,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     
     // Update the reaction record
     console.log(`[CompleteUpload] Attempting to update reaction ${reactionId} with storagePath: ${storagePath}`);
-    const updatePayload = {
+    const updatePayload: {
+      reaction_video_storage_path: string;
+      status: string;
+      updated_at: string;
+      thumbnail_url?: string;
+    } = {
       reaction_video_storage_path: storagePath,
       status: 'uploaded', // Or 'processed', 'ready_to_publish' etc.
       updated_at: new Date().toISOString(),
     };
+    if (thumbnailUrl) {
+      updatePayload.thumbnail_url = thumbnailUrl;
+    }
     console.log(`[CompleteUpload] Update payload: ${JSON.stringify(updatePayload)}`);
 
     const { data: updatedReaction, error: updateError } = await supabaseAdmin

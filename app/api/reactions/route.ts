@@ -149,7 +149,16 @@ export async function GET(request: Request) {
     // Build the query
     let query = supabaseAdmin
       .from('reactions')
-      .select('*') // Select all columns for now
+      .select(
+        `
+        id,
+        title,
+        status,
+        created_at,
+        reaction_video_storage_path,
+        thumbnail_url
+      `
+      )
       .eq('user_id', userId); // Filter by the authenticated user's ID
     
     

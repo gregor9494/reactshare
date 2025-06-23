@@ -90,10 +90,18 @@ export function ReactionVideoGrid({ videos }: ReactionVideoGridProps) {
           <Card key={video.id} className="overflow-hidden">
             <div className="group relative">
               <div className="aspect-video w-full overflow-hidden bg-muted">
-                {/* Placeholder for thumbnail */}
-                <div className="flex h-full w-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                {video.thumbnail_url ? (
+                  <Image
+                    src={video.thumbnail_url}
+                    alt={video.title || "Reaction thumbnail"}
+                    layout="fill"
+                    className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
                     <span>No Thumbnail</span>
-                </div>
+                  </div>
+                )}
               </div>
               
               {video.reaction_video_storage_path && video.status === 'uploaded' && (

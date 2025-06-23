@@ -15,6 +15,7 @@ export interface Reaction {
   reaction_video_storage_path: string | null;
   title: string | null;
   status: string; // e.g., 'pending_upload', 'uploaded', 'processing', 'published', 'error'
+  thumbnail_url?: string | null;
   created_at: string; // Supabase returns timestamps as strings
   updated_at: string; // Supabase returns timestamps as strings
 }
