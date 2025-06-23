@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { BarChart3, Camera, Clock, Cloud, Home, Settings, Share2, Users, Plus } from "lucide-react"
+import { BarChart3, Camera, Clock, Cloud, Home, Settings, Share2, Users, Plus, Music } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function DashboardNav() {
@@ -28,6 +28,12 @@ export function DashboardNav() {
           <Button variant="ghost" className="w-full justify-start">
             <Cloud className="mr-2 h-4 w-4" />
             Video Library
+          </Button>
+        </Link>
+        <Link href="/dashboard/ai-music">
+          <Button variant="ghost" className="w-full justify-start">
+            <Music className="mr-2 h-4 w-4" />
+            AI Music
           </Button>
         </Link>
         <Link href="/dashboard/analytics">

@@ -1,0 +1,7 @@
+CREATE TABLE ai_music (
+  id SERIAL PRIMARY KEY,
+  prompt TEXT NOT NULL,
+  song_url TEXT NOT NULL,
+  video_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

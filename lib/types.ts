@@ -159,3 +159,12 @@ export interface SocialProviderConfig {
     [key: string]: boolean;
   };
 }
+
+export interface AiMusic {
+  id: number;
+  prompt: string;
+  song_url: string;
+  video_id?: string;
+  created_at: string;
+  lyrics?: string;
+}
