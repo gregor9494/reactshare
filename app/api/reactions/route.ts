@@ -85,10 +85,14 @@ export async function POST(request: Request) {
       
       // Title is now solely based on the request body
       
-      // Thumbnail logic remains commented out as reactions table doesn't have thumbnail_url
-      // if (sourceVideo.thumbnail_url) {
-      //   reactionData.thumbnail_url = sourceVideo.thumbnail_url;
-      // }
+      // Assign thumbnail_url if the source video has one
+      if (sourceVideo.thumbnail_url) {
+        reactionData.thumbnail_url = sourceVideo.thumbnail_url;
+        console.log(`POST /api/reactions: Thumbnail URL ${sourceVideo.thumbnail_url} assigned to the new reaction.`);
+      } else {
+        console.warn(`POST /api/reactions: Source video ${source_video_id} does not have a thumbnail_url.`);
+      }
+
       console.log(`POST /api/reactions: Using URL ${reactionData.source_video_url} and path ${reactionData.reaction_video_storage_path} from source_video ${source_video_id}. Status set to 'uploaded'.`);
 
     } else if (source_video_url) {
